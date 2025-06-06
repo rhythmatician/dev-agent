@@ -207,7 +207,8 @@ def main() -> NoReturn:
         if iteration > 0:
             branch_name = f"{branch_name}_{iteration + 1}"
 
-        git_tool.create_branch(branch_name)
+        if not git_tool.create_branch(branch_name):
+            sys.exit(2)  # Exit with error if branch creation fails
 
         try:
             # Validate and apply patch

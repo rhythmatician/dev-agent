@@ -11,7 +11,7 @@ to get the output. This is to ensure that the output is captured correctly
 by Copilot and can be used in subsequent steps.
 
 
-Also, you should be self-aware that you have a tendancy to delete a line-break from the
+Also, you should be self-aware that you have a tendency to delete a line-break from the
 beginning of the code block, when you edit a file.  This behavior is consistent.  We use
 use `black` on autosave, which does some to mitigate this, but you should always add an
 extra line-break at the beginning of the code block when you edit a file.
