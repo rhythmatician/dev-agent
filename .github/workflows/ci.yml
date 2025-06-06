@@ -37,4 +37,4 @@ jobs:
     
     - name: Type check with mypy
       run: |
-        mypy agent_lib/ dev_agent.py --ignore-missing-imports || true
+        mypy agent_lib/ dev_agent.py --ignore-missing-imports
