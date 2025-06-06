@@ -19,6 +19,7 @@ Typical usage:
             print(f"Failed: {failure.test_name} in {failure.file_path}")
 """
 
+import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -58,7 +59,8 @@ def run_tests(command: str, repo_path: Path) -> TestResult:
         if not result.passed:
             for failure in result.failures:
                 print(f"Failed: {failure.test_name} in {failure.file_path}")
-    """  # For cross-platform compatibility, detect if pytest is available
+    """
+    # For cross-platform compatibility, detect if pytest is available
     # and use appropriate command format
     if command.startswith("pytest"):
         # Replace "pytest" with "python -m pytest" for reliability
@@ -68,7 +70,7 @@ def run_tests(command: str, repo_path: Path) -> TestResult:
             command += " -v"
     try:
         proc = subprocess.run(
-            command.split(),
+            shlex.split(command),
             cwd=repo_path,
             capture_output=True,
             text=True,
@@ -127,11 +129,12 @@ def _parse_pytest_failures(output: str) -> List[TestFailure]:
                         file_path=file_part,
                         error_output=output,  # Include full output for context
                     )
+
                     failures.append(failure)
 
     # If no FAILED lines found but we have a non-zero exit code,
     # create a generic failure entry
-    if not failures and "FAILED" not in output:
+    if not failures:
         failures.append(
             TestFailure(test_name="unknown", file_path="unknown", error_output=output)
         )

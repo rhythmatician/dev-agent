@@ -49,11 +49,15 @@ def test_fail_one(): assert False, "First failure"
 def test_fail_two(): assert 1 == 2, "Second failure"
 """
     )
-
     result = run_tests("pytest --disable-warnings", repo_path=project)
 
     assert result.passed is False
-    assert len(result.failures) >= 1  # At least one failure should be captured
+    # Without --maxfail=1, pytest runs all tests, so expect exactly 2 failures
+    assert len(result.failures) == 2
+    failure_names = [f.test_name for f in result.failures]
+    assert "test_fail_one" in failure_names
+    assert "test_fail_two" in failure_names
+    assert all(f.file_path == "test_multiple.py" for f in result.failures)
 
 
 def test_run_tests_mixed_results(tmp_path: Path) -> None:
@@ -70,7 +74,9 @@ def test_fails(): assert False, "This test fails"
     result = run_tests("pytest --disable-warnings", repo_path=project)
 
     assert result.passed is False  # Should fail due to one failing test
-    assert len(result.failures) >= 1
+    assert len(result.failures) == 1  # Exactly one failure expected
+    assert result.failures[0].test_name == "test_fails"
+    assert result.failures[0].file_path == "test_mixed.py"
 
 
 def test_run_tests_no_tests(tmp_path: Path) -> None:
