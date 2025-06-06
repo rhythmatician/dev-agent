@@ -129,7 +129,7 @@ def _extract_error_message(output: str, test_nodeid: str) -> str:
 
     # Find the failure section for this specific test
     in_failure_section = False
-    error_lines = []
+    error_lines: List[str] = []
 
     for line in lines:
         if f"FAILED {test_nodeid}" in line:
@@ -161,7 +161,7 @@ def _parse_pytest_failures(output: str) -> List[TestFailure]:
         List of TestFailure objects with parsed failure details
     """
 
-    failures = []
+    failures: List[TestFailure] = []
 
     lines = output.splitlines()
 
