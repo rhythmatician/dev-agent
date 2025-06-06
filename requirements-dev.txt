@@ -1,0 +1,8 @@
+# Development and testing dependencies
+pytest>=7.0.0  # Test framework
+pytest-cov>=4.0.0  # Coverage reporting
+black>=23.0.0  # Code formatter
+isort>=5.12.0  # Import sorter
+flake8>=6.0.0  # Linter
+mypy>=1.0.0  # Type checker
+pre-commit>=3.0.0  # Pre-commit hooks
