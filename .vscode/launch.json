@@ -1,0 +1,34 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Dev Agent: Main",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/dev_agent.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "name": "Dev Agent: Test Target",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/dev_agent.py",
+            "args": [
+                "${workspaceFolder}/tests/fixtures/sample-project"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
