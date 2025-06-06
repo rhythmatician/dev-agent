@@ -1,0 +1,27 @@
+# agent.config.yaml
+# ------------------------------------------------------------------
+# Default runtime configuration loaded by dev_agent.py.
+# Downstream projects should copy this file to their root
+# and override values as needed.
+# ------------------------------------------------------------------
+
+model:
+  dev_agent: "llama-cpp:/models/codellama-13b.Q4_K_M.gguf"  # code-capable LLM
+  supervisor: "ollama:phi"                                  # lightweight critic
+
+test_command: "pytest --maxfail=1"  # single-failure loop; override per project
+max_iterations: 5                   # safety stop to avoid infinite loops
+
+git:
+  remote: "origin"                  # default remote name
+  branch_prefix: "dev-agent/fix"    # e.g., dev-agent/fix-test_addition
+  auto_pr: true                     # open PR via `gh` CLI after commit
+
+shell:
+  whitelist:
+    - pytest
+    - git
+    - pip
+    - npm
+    - make
+    - python
