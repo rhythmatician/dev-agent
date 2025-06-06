@@ -250,17 +250,16 @@ class TestDevAgentOrchestrator:
             "passed": False,
             "failures": [test_failure],
         }
-
         mock_llm_generator = MagicMock()
         mock_patch_result = MagicMock()
         mock_patch_result.diff_content = "invalid diff content"
-        mock_llm_generator.generate_patch.return_value = mock_patch_result
+        mock_llm_generator.generate_patch.return_value = (
+            mock_patch_result  # Mock validate_patch to return False to trigger the exit
+        )
+        mock_llm_generator.validate_patch.return_value = False
 
         mock_git_tool = MagicMock()
-        mock_git_tool.create_branch.return_value = None  # Success
-
-        # Mock apply_patch to return False (indicating failure)
-        mock_git_tool.apply_patch.return_value = False
+        mock_git_tool.create_branch.return_value = True  # Success
 
         mock_config: DevAgentConfig = {
             "max_iterations": 5,
@@ -277,11 +276,12 @@ class TestDevAgentOrchestrator:
         with pytest.raises(SystemExit) as exc_info:
             dev_agent.main()
 
-        assert exc_info.value.code == 2
-
-        # Assert git operations stopped after patch application failed
+        assert (
+            exc_info.value.code == 2
+        )  # Assert git operations stopped after patch validation failed
         mock_git_tool.create_branch.assert_called_once()
-        mock_git_tool.apply_patch.assert_called_once()
+        # apply_patch should not be called since validation failed
+        mock_git_tool.apply_patch.assert_not_called()
         mock_git_tool.commit.assert_not_called()
         mock_git_tool.push.assert_not_called()
 
@@ -380,3 +380,57 @@ class TestDevAgentOrchestrator:
         mock_test_runner.run_tests.assert_not_called()
         mock_llm_generator.generate_patch.assert_not_called()
         mock_git_tool.create_branch.assert_not_called()
+
+    def test_patch_application_failure_exits_two(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        """Test exit code 2 when patch application fails."""
+        # Arrange
+        test_failure: FailureInfo = {
+            "test_name": "test_bad_patch",
+            "file_path": "test_example.py",
+            "error_output": "SyntaxError: invalid syntax",
+        }
+
+        mock_test_runner = MagicMock()
+        mock_test_runner.run_tests.return_value = {
+            "passed": False,
+            "failures": [test_failure],
+        }
+
+        mock_llm_generator = MagicMock()
+        mock_patch_result = MagicMock()
+        mock_patch_result.diff_content = "invalid diff content"
+        mock_llm_generator.generate_patch.return_value = mock_patch_result
+        # Validation succeeds so we proceed to apply_patch
+        mock_llm_generator.validate_patch.return_value = True
+
+        mock_git_tool = MagicMock()
+        mock_git_tool.create_branch.return_value = True  # Success
+        # Apply patch fails
+        mock_git_tool.apply_patch.return_value = False
+
+        mock_config: DevAgentConfig = {
+            "max_iterations": 5,
+            "test_command": "pytest --maxfail=1",
+            "git": {"branch_prefix": "dev-agent/fix"},
+            "llm": {"model_path": "models/test.gguf"},
+        }
+        monkeypatch.setattr("dev_agent._load_config", lambda: mock_config)
+        monkeypatch.setattr("dev_agent.TestRunner", lambda x: mock_test_runner)
+        monkeypatch.setattr("dev_agent.LLMPatchGenerator", lambda x: mock_llm_generator)
+        monkeypatch.setattr("dev_agent.GitTool", lambda: mock_git_tool)
+
+        # Act & Assert
+        with pytest.raises(SystemExit) as exc_info:
+            dev_agent.main()
+
+        assert exc_info.value.code == 2
+
+        # Assert git operations stopped after patch application failed
+        mock_git_tool.create_branch.assert_called_once()
+        mock_git_tool.apply_patch.assert_called_once_with(
+            mock_patch_result.diff_content
+        )
+        mock_git_tool.commit.assert_not_called()
+        mock_git_tool.push.assert_not_called()
