@@ -137,7 +137,6 @@ def _extract_error_message(output: str, test_nodeid: str) -> str:
             error_lines.append(line)
 
         elif in_failure_section:
-
             if line.startswith("FAILED ") or line.startswith("="):
                 # We've reached the next failure or end section
                 break
@@ -166,11 +165,9 @@ def _parse_pytest_failures(output: str) -> List[TestFailure]:
     lines = output.splitlines()
 
     for line in lines:
-
         # Look for "FAILED test_file.py::test_name" pattern
 
         if line.startswith("FAILED ") and "::" in line:
-
             # Example: "FAILED test_sample.py::test_always_fails - assert 2 == 3"
 
             parts = line.split()
