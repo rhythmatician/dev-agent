@@ -3,6 +3,20 @@
 This module provides functionality to run tests in a target project
 and return structured results including failures and error information.
 Following the architecture specified in docs/AGENT-ARCHITECTURE.md.
+
+The main function `run_tests()` executes test commands (typically pytest)
+in a subprocess and parses the output to extract failure information.
+This is used by the AutoGen DevAgent to understand which tests are failing
+and need to be fixed.
+
+Typical usage:
+    from agent_lib.test_runner import run_tests
+    from pathlib import Path
+
+    result = run_tests("pytest --maxfail=1", Path("/path/to/project"))
+    if not result.passed:
+        for failure in result.failures:
+            print(f"Failed: {failure.test_name} in {failure.file_path}")
 """
 
 import subprocess
