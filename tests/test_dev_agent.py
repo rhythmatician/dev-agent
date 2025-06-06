@@ -15,11 +15,11 @@ import pytest
 from pytest import MonkeyPatch
 
 import dev_agent
-from dev_agent import ConfigError, NoTestsFoundError, PatchApplicationError
+from dev_agent import ConfigError, NoTestsFoundError
 
 
 # Type definitions for better mypy support
-class TestFailure(TypedDict):
+class FailureInfo(TypedDict):
     """Type definition for a test failure."""
 
     test_name: str
@@ -27,11 +27,11 @@ class TestFailure(TypedDict):
     error_output: str
 
 
-class TestResult(TypedDict):
+class RunResult(TypedDict):
     """Type definition for test run results."""
 
     passed: bool
-    failures: List[TestFailure]
+    failures: List[FailureInfo]
 
 
 class DevAgentConfig(TypedDict):
@@ -127,7 +127,7 @@ class TestDevAgentOrchestrator:
     def test_single_failure_then_success(self, monkeypatch: MonkeyPatch) -> None:
         """Test single iteration with failure, then success after patch."""
         # Arrange
-        test_failure: TestFailure = {
+        test_failure: FailureInfo = {
             "test_name": "test_example",
             "file_path": "test_example.py",
             "error_output": "AssertionError: assert 1 == 2",
@@ -155,7 +155,7 @@ class TestDevAgentOrchestrator:
 
         mock_git_tool = MagicMock()
 
-        mock_config = {
+        mock_config: DevAgentConfig = {
             "max_iterations": 5,
             "test_command": "pytest --maxfail=1",
             "git": {"branch_prefix": "dev-agent/fix"},
@@ -185,7 +185,7 @@ class TestDevAgentOrchestrator:
     def test_max_iterations_reached_exits_one(self, monkeypatch: MonkeyPatch) -> None:
         """Test exit code 1 when max iterations reached without success."""
         # Arrange
-        test_failure: TestFailure = {
+        test_failure: FailureInfo = {
             "test_name": "test_persistent_failure",
             "file_path": "test_example.py",
             "error_output": "AssertionError: stubborn failure",
@@ -204,9 +204,8 @@ class TestDevAgentOrchestrator:
             "diff --git a/example.py b/example.py\nindex 123..456"
         )
         mock_llm_generator.generate_patch.return_value = mock_patch_result
-
         mock_git_tool = MagicMock()  # Config with max_iterations = 2
-        mock_config = {
+        mock_config: DevAgentConfig = {
             "max_iterations": 2,
             "test_command": "pytest --maxfail=1",
             "git": {"branch_prefix": "dev-agent/fix"},
@@ -240,7 +239,7 @@ class TestDevAgentOrchestrator:
     def test_patch_validation_failure_exits_two(self, monkeypatch: MonkeyPatch) -> None:
         """Test exit code 2 when patch validation fails."""
         # Arrange
-        test_failure: TestFailure = {
+        test_failure: FailureInfo = {
             "test_name": "test_bad_patch",
             "file_path": "test_example.py",
             "error_output": "SyntaxError: invalid syntax",
@@ -263,7 +262,7 @@ class TestDevAgentOrchestrator:
         # Mock apply_patch to return False (indicating failure)
         mock_git_tool.apply_patch.return_value = False
 
-        mock_config = {
+        mock_config: DevAgentConfig = {
             "max_iterations": 5,
             "test_command": "pytest --maxfail=1",
             "git": {"branch_prefix": "dev-agent/fix"},
@@ -308,7 +307,7 @@ class TestDevAgentOrchestrator:
 
         mock_git_tool = MagicMock()
 
-        mock_config = {
+        mock_config: DevAgentConfig = {
             "max_iterations": 5,
             "test_command": "pytest --maxfail=1",
             "git": {"branch_prefix": "dev-agent/fix"},
@@ -331,11 +330,10 @@ class TestDevAgentOrchestrator:
         # Arrange
         mock_test_runner = MagicMock()
         mock_test_runner.run_tests.side_effect = NoTestsFoundError("No tests found")
-
         mock_llm_generator = MagicMock()
         mock_git_tool = MagicMock()
 
-        mock_config = {
+        mock_config: DevAgentConfig = {
             "max_iterations": 5,
             "test_command": "pytest --maxfail=1",
             "git": {"branch_prefix": "dev-agent/fix"},
