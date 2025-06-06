@@ -2,3 +2,5 @@ tests/__pycache__/*
 __pycache__/*
 *.pyc
 venv/*
+.coverage
+=1.0.0
