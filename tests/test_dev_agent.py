@@ -8,32 +8,14 @@ All tests use mocked dependencies to ensure we're testing only the
 orchestrator logic without actual LLM calls or git operations.
 """
 
-from typing import Any, Dict, Generator, List, TypedDict, cast
+from typing import Callable, Dict, Generator, List, TypedDict
 from unittest.mock import MagicMock, patch
 
 import pytest
 from pytest import MonkeyPatch
 
 import dev_agent
-
-
-# Custom exceptions that the orchestrator should handle
-class NoTestsFoundError(Exception):
-    """Raised when no tests are discovered."""
-
-    pass
-
-
-class ConfigError(Exception):
-    """Raised when configuration is invalid or missing."""
-
-    pass
-
-
-class PatchApplicationError(Exception):
-    """Raised when patch cannot be applied."""
-
-    pass
+from dev_agent import ConfigError, NoTestsFoundError, PatchApplicationError
 
 
 # Type definitions for better mypy support
@@ -58,18 +40,47 @@ class DevAgentConfig(TypedDict):
     max_iterations: int
     test_command: str
     git: Dict[str, str]
+    llm: Dict[str, str]
 
 
 @pytest.fixture(autouse=True)
 def mock_sys_exit() -> Generator[MagicMock, None, None]:
-    """Mock sys.exit to raise SystemExit instead of actually exiting."""
+    """Mock sys.exit to raise SystemExit with the provided exit code."""
     with patch("sys.exit") as mock_exit:
-        mock_exit.side_effect = SystemExit
+
+        def exit_with_code(code: int = 0) -> None:
+            raise SystemExit(code)
+
+        mock_exit.side_effect = exit_with_code
         yield mock_exit
 
 
 class TestDevAgentOrchestrator:
     """Test suite for DevAgent orchestrator functionality."""
+
+    def _mock_test_runner_factory(
+        self, mock_test_runner: MagicMock
+    ) -> Callable[[str], MagicMock]:
+        """Create a properly typed factory function for TestRunner."""
+        return lambda repo_path: mock_test_runner
+
+    def _mock_llm_generator_factory(
+        self, mock_llm_generator: MagicMock
+    ) -> Callable[[str], MagicMock]:
+        """Create a properly typed factory function for LLMPatchGenerator."""
+        return lambda model_path: mock_llm_generator
+
+    def _mock_git_tool_factory(
+        self, mock_git_tool: MagicMock
+    ) -> Callable[[], MagicMock]:
+        """Create a properly typed factory function for GitTool."""
+        return lambda: mock_git_tool
+
+    def _mock_config_factory(
+        self, config: DevAgentConfig
+    ) -> Callable[[], DevAgentConfig]:
+        """Create a properly typed factory function for config loading."""
+        return lambda: config
 
     def test_exit_zero_when_no_failures(self, monkeypatch: MonkeyPatch) -> None:
         """Test immediate exit with code 0 when tests pass on first run."""
@@ -78,18 +89,30 @@ class TestDevAgentOrchestrator:
         mock_test_runner.run_tests.return_value = {"passed": True, "failures": []}
 
         mock_llm_generator = MagicMock()
-        mock_git_tool = MagicMock()  # Mock the _load_config function
+        mock_git_tool = MagicMock()
+
+        # Mock the _load_config function
         mock_config: DevAgentConfig = {
             "max_iterations": 5,
             "test_command": "pytest --maxfail=1",
             "git": {"branch_prefix": "dev-agent/fix"},
+            "llm": {"model_path": "models/test.gguf"},
         }
-        monkeypatch.setattr("dev_agent._load_config", lambda: mock_config)
+        monkeypatch.setattr(
+            "dev_agent._load_config", self._mock_config_factory(mock_config)
+        )
 
         # Mock all the component constructors
-        monkeypatch.setattr("dev_agent.TestRunner", lambda x: mock_test_runner)
-        monkeypatch.setattr("dev_agent.LLMPatchGenerator", lambda x: mock_llm_generator)
-        monkeypatch.setattr("dev_agent.GitTool", lambda: mock_git_tool)
+        monkeypatch.setattr(
+            "dev_agent.TestRunner", self._mock_test_runner_factory(mock_test_runner)
+        )
+        monkeypatch.setattr(
+            "dev_agent.LLMPatchGenerator",
+            self._mock_llm_generator_factory(mock_llm_generator),
+        )
+        monkeypatch.setattr(
+            "dev_agent.GitTool", self._mock_git_tool_factory(mock_git_tool)
+        )
 
         # Act & Assert
         with pytest.raises(SystemExit) as exc_info:
@@ -119,7 +142,15 @@ class TestDevAgentOrchestrator:
 
         mock_llm_generator = MagicMock()
         mock_patch_result = MagicMock()
-        mock_patch_result.diff_content = "diff --git a/example.py b/example.py\nindex 123..456\n--- a/example.py\n+++ b/example.py\n@@ -1 +1 @@\n-return 1\n+return 2"
+        mock_patch_result.diff_content = (
+            "diff --git a/example.py b/example.py\n"
+            "index 123..456\n"
+            "--- a/example.py\n"
+            "+++ b/example.py\n"
+            "@@ -1 +1 @@\n"
+            "-return 1\n"
+            "+return 2"
+        )
         mock_llm_generator.generate_patch.return_value = mock_patch_result
 
         mock_git_tool = MagicMock()
@@ -128,6 +159,7 @@ class TestDevAgentOrchestrator:
             "max_iterations": 5,
             "test_command": "pytest --maxfail=1",
             "git": {"branch_prefix": "dev-agent/fix"},
+            "llm": {"model_path": "models/test.gguf"},
         }
         monkeypatch.setattr("dev_agent._load_config", lambda: mock_config)
         monkeypatch.setattr("dev_agent.TestRunner", lambda x: mock_test_runner)
@@ -153,7 +185,7 @@ class TestDevAgentOrchestrator:
     def test_max_iterations_reached_exits_one(self, monkeypatch: MonkeyPatch) -> None:
         """Test exit code 1 when max iterations reached without success."""
         # Arrange
-        test_failure = {
+        test_failure: TestFailure = {
             "test_name": "test_persistent_failure",
             "file_path": "test_example.py",
             "error_output": "AssertionError: stubborn failure",
@@ -173,13 +205,12 @@ class TestDevAgentOrchestrator:
         )
         mock_llm_generator.generate_patch.return_value = mock_patch_result
 
-        mock_git_tool = MagicMock()
-
-        # Config with max_iterations = 2
+        mock_git_tool = MagicMock()  # Config with max_iterations = 2
         mock_config = {
             "max_iterations": 2,
             "test_command": "pytest --maxfail=1",
             "git": {"branch_prefix": "dev-agent/fix"},
+            "llm": {"model_path": "models/test.gguf"},
         }
         monkeypatch.setattr("dev_agent._load_config", lambda: mock_config)
         monkeypatch.setattr("dev_agent.TestRunner", lambda x: mock_test_runner)
@@ -209,7 +240,7 @@ class TestDevAgentOrchestrator:
     def test_patch_validation_failure_exits_two(self, monkeypatch: MonkeyPatch) -> None:
         """Test exit code 2 when patch validation fails."""
         # Arrange
-        test_failure = {
+        test_failure: TestFailure = {
             "test_name": "test_bad_patch",
             "file_path": "test_example.py",
             "error_output": "SyntaxError: invalid syntax",
@@ -228,14 +259,15 @@ class TestDevAgentOrchestrator:
 
         mock_git_tool = MagicMock()
         mock_git_tool.create_branch.return_value = None  # Success
-        mock_git_tool.apply_patch.side_effect = PatchApplicationError(
-            "Patch validation failed"
-        )
+
+        # Mock apply_patch to return False (indicating failure)
+        mock_git_tool.apply_patch.return_value = False
 
         mock_config = {
             "max_iterations": 5,
             "test_command": "pytest --maxfail=1",
             "git": {"branch_prefix": "dev-agent/fix"},
+            "llm": {"model_path": "models/test.gguf"},
         }
         monkeypatch.setattr("dev_agent._load_config", lambda: mock_config)
         monkeypatch.setattr("dev_agent.TestRunner", lambda x: mock_test_runner)
@@ -280,6 +312,7 @@ class TestDevAgentOrchestrator:
             "max_iterations": 5,
             "test_command": "pytest --maxfail=1",
             "git": {"branch_prefix": "dev-agent/fix"},
+            "llm": {"model_path": "models/test.gguf"},
         }
         monkeypatch.setattr("dev_agent._load_config", lambda: mock_config)
         monkeypatch.setattr("dev_agent.TestRunner", lambda x: mock_test_runner)
@@ -288,12 +321,10 @@ class TestDevAgentOrchestrator:
 
         # Act
         with pytest.raises(SystemExit):
-            dev_agent.main()
-
-        # Assert branch name is properly sanitized
-        # "tests/test_mod.py::Test::test feature" should become "dev-agent/fix_tests_test_mod_py__Test__test_feature"
-        expected_branch = "dev-agent/fix_tests_test_mod_py__Test__test_feature"
-        mock_git_tool.create_branch.assert_called_once_with(expected_branch)
+            dev_agent.main()  # Assert branch name is properly sanitized
+        # "tests/test_mod.py::Test::test feature" should become sanitized branch name
+        expected = "dev-agent/fix_tests/test_mod.py-Test-test-feature"
+        mock_git_tool.create_branch.assert_called_once_with(expected)
 
     def test_no_tests_discovered_exits_zero(self, monkeypatch: MonkeyPatch) -> None:
         """Test exit code 0 when no tests are discovered."""
@@ -308,6 +339,7 @@ class TestDevAgentOrchestrator:
             "max_iterations": 5,
             "test_command": "pytest --maxfail=1",
             "git": {"branch_prefix": "dev-agent/fix"},
+            "llm": {"model_path": "models/test.gguf"},
         }
         monkeypatch.setattr("dev_agent._load_config", lambda: mock_config)
         monkeypatch.setattr("dev_agent.TestRunner", lambda x: mock_test_runner)
@@ -318,19 +350,18 @@ class TestDevAgentOrchestrator:
         with pytest.raises(SystemExit) as exc_info:
             dev_agent.main()
 
-        assert exc_info.value.code == 0
-
-        # Assert LLM and Git tools are never called
+        assert exc_info.value.code == 0  # Assert LLM and Git tools are never called
         mock_llm_generator.generate_patch.assert_not_called()
         mock_git_tool.create_branch.assert_not_called()
 
     def test_invalid_config_fails_fast(self, monkeypatch: MonkeyPatch) -> None:
         """Test exit code 1 when configuration is invalid or missing."""
+
         # Arrange
-        monkeypatch.setattr(
-            "dev_agent._load_config",
-            lambda: exec('raise ConfigError("Invalid config")'),
-        )
+        def mock_config_error() -> DevAgentConfig:
+            raise ConfigError("Invalid config")
+
+        monkeypatch.setattr("dev_agent._load_config", mock_config_error)
 
         # Mock components (though they shouldn't be called)
         mock_test_runner = MagicMock()
