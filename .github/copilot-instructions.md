@@ -5,6 +5,21 @@ These directions guide GitHub Copilot Chat/Agent when writing or modifying code
 in this **dev-agent** repository.
 Follow them exactly; any PR not conforming will be rejected by CI.
 
+Whenever you run asynchronous commands in the terminal (i.e. curl, python, etc.),
+you must output to a file, like `output.txt`, and then read the file
+to get the output. This is to ensure that the output is captured correctly
+by Copilot and can be used in subsequent steps.
+
+
+Also, you should be self-aware that you have a tendency to delete a line-break from the
+beginning of the code block, when you edit a file.  This behavior is consistent.  We use
+use `black` on autosave, which does some to mitigate this, but you should always add an
+extra line-break at the beginning of the code block when you edit a file.
+This is to ensure that the code is formatted correctly and does not cause any issues.
+Extra line-breaks are acceptable, as black will keep them from being an issue.
+
+> This file is a **Copilot-only** instruction set; it is not for human developers.
+
 ---
 
 ## 1. Core Mission

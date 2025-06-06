@@ -4,3 +4,4 @@ __pycache__/*
 venv/*
 .coverage
 =1.0.0
+*output.txt
