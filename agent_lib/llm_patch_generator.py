@@ -18,12 +18,85 @@ Typical usage:
         pass
 """
 
+import ast
+import logging
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 from agent_lib.test_runner import TestFailure
+
+
+def apply_diff_to_source(original_source: str, diff_content: str) -> str:
+    """Apply a unified diff to source code in memory.
+
+    Args:
+        original_source: The original source code
+        diff_content: The unified diff to apply
+
+    Returns:
+        The modified source code
+
+    Note:
+        This is a simplified diff parser for basic patches.
+        For production use, consider using the `patch` library.
+    """
+    lines = original_source.splitlines(keepends=True)
+    diff_lines = diff_content.splitlines()
+
+    # Find the @@ header line
+    hunk_start = None
+    for i, line in enumerate(diff_lines):
+        if line.startswith("@@"):
+            hunk_start = (
+                i + 1
+            )  # Parse the hunk header: @@ -old_start,old_count +new_start,new_count @@
+            # We don't need to parse the line numbers for our implementation
+            break
+
+    if hunk_start is None:
+        return original_source  # No valid hunk found
+
+    # Apply the changes
+    result_lines = []
+    original_line_idx = 0
+
+    for line in diff_lines[hunk_start:]:
+
+        if line.startswith(" "):
+            # Context line - copy from original
+            if original_line_idx < len(lines):
+                result_lines.append(lines[original_line_idx])
+                original_line_idx += 1
+        elif line.startswith("-"):
+            # Deletion - skip original line
+            original_line_idx += 1
+        elif line.startswith("+"):
+            # Addition - add new line, preserving newline consistency
+            # Check if the line already ends with newline
+            new_content = line[1:]
+            if not new_content.endswith(("\n", "\r\n")):
+                # Determine appropriate newline from existing content
+                if original_line_idx > 0 and lines[original_line_idx - 1].endswith(
+                    "\r\n"
+                ):
+                    new_content += "\r\n"
+                elif original_line_idx > 0 and lines[original_line_idx - 1].endswith(
+                    "\n"
+                ):
+                    new_content += "\n"
+                else:
+                    new_content += "\n"
+            result_lines.append(new_content)
+
+    # Add remaining original lines
+    while original_line_idx < len(lines):
+        result_lines.append(lines[original_line_idx])
+        original_line_idx += 1
+
+    return "".join(result_lines)
+
 
 # Constants for LLM configuration
 DEFAULT_TIMEOUT_SECONDS = 30
@@ -70,11 +143,22 @@ class LLMPatchGenerator:
         Raises:
             PatchGenerationError: If patch generation fails
         """
+        # For backward compatibility, try the simple approach first
+        # If file doesn't exist, fall back to basic generation without AST validation
         try:
-            diff_content = self._call_llm(test_failure, repo_path)
-            return PatchResult(diff_content=diff_content)
-        except Exception as e:
-            raise PatchGenerationError(f"Failed to generate patch: {e}")
+            return self.generate_patch_with_retry(test_failure, repo_path)
+        except PatchGenerationError as e:
+            if "Cannot read source file" in str(e):
+                # Fallback to basic generation for tests or when source file is missing
+                try:
+                    diff_content = self._call_llm(test_failure, repo_path)
+                    return PatchResult(diff_content=diff_content)
+                except Exception as fallback_e:
+                    raise PatchGenerationError(
+                        f"Failed to generate patch: {fallback_e}"
+                    )
+            else:
+                raise
 
     def validate_patch(self, diff_content: str, repo_path: Path) -> bool:
         """Validate that a patch can be applied using git apply --check.
@@ -98,6 +182,111 @@ class LLMPatchGenerator:
         except (subprocess.SubprocessError, FileNotFoundError):
             return False
 
+    def ast_validate_patch(self, diff_content: str, original_source: str) -> bool:
+        """Validate that applying a patch results in syntactically correct Python.
+
+        Args:
+            diff_content: The unified diff content to validate
+            original_source: The original source code
+
+        Returns:
+            True if the patched code is syntactically valid, False otherwise
+        """
+        try:
+            # Apply the diff to the original source
+            modified_source = apply_diff_to_source(original_source, diff_content)
+
+            # Try to parse the modified source with AST
+            ast.parse(modified_source)
+            return True
+        except SyntaxError:
+            return False
+        except Exception:
+            # Any other error in diff application or parsing
+            return False
+
+    def generate_patch_with_retry(
+        self, test_failure: TestFailure, repo_path: Path, max_retries: int = 2
+    ) -> PatchResult:
+        """Generate a patch with AST validation and retry on syntax errors.
+
+        Args:
+            test_failure: The test failure information
+            repo_path: Path to the repository where the test failure occurred
+            max_retries: Maximum number of retry attempts for syntax errors
+
+        Returns:
+            PatchResult containing the generated diff
+
+        Raises:
+            PatchGenerationError: If patch generation fails after retries
+        """
+        # Get the original source file content
+        file_path = repo_path / test_failure.file_path
+        try:
+            original_source = file_path.read_text(encoding="utf-8")
+        except (FileNotFoundError, UnicodeDecodeError) as e:
+            raise PatchGenerationError(f"Cannot read source file {file_path}: {e}")
+
+        original_prompt = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt == 0:
+                    # First attempt - normal generation
+                    diff_content = self._call_llm(test_failure, repo_path)
+                    original_prompt = f"Fix test failure: {test_failure.error_output}"
+                else:
+                    # Retry with syntax error hint
+                    retry_prompt = f"""{original_prompt}
+
+IMPORTANT: Your previous patch had syntax errors.
+Please ensure the patch compiles without syntax errors.
+
+Generate a corrected unified diff patch:"""
+                    # Create a mock test failure for the retry
+                    retry_failure = TestFailure(
+                        test_name=test_failure.test_name,
+                        file_path=test_failure.file_path,
+                        error_output=retry_prompt,
+                    )
+                    diff_content = self._call_llm(retry_failure, repo_path)
+                    # Validate syntax using AST
+                if self.ast_validate_patch(diff_content, original_source):
+                    return PatchResult(diff_content=diff_content)
+                else:
+                    # Log diagnostic information for AST validation failure
+                    logging.error(
+                        "AST validation failed for the generated patch "
+                        "(attempt %d/%d). Diff content:\n%s\n"
+                        "Original source preview (first 500 chars):\n%s",
+                        attempt + 1,
+                        max_retries + 1,
+                        diff_content,
+                        (
+                            original_source[:500] + "..."
+                            if len(original_source) > 500
+                            else original_source
+                        ),
+                    )
+
+            except Exception as e:
+                if attempt == max_retries:
+                    raise PatchGenerationError(f"Failed to generate patch: {e}")
+                # Continue to next attempt if not last attempt
+                continue
+
+            # If we get here, AST validation failed
+            # If this was the last attempt, raise an error
+            if attempt == max_retries:
+                raise PatchGenerationError(
+                    f"Failed to generate syntactically valid patch "
+                    f"after {max_retries + 1} attempts"
+                )
+
+        # This should never be reached, but for type safety
+        raise PatchGenerationError("Unexpected error in patch generation")
+
     def _call_llm(self, test_failure: TestFailure, repo_path: Path) -> str:
         """Call the LLM to generate a patch for the test failure.
 
@@ -115,7 +304,7 @@ class LLMPatchGenerator:
             Exception: If LLM call fails
         """
         # Construct the prompt for the LLM
-        prompt = self._build_prompt(test_failure, repo_path)
+        prompt = self.build_prompt(test_failure, repo_path)
 
         # Determine backend and call appropriate method
         if self.model_path.startswith("ollama:"):
@@ -126,7 +315,7 @@ class LLMPatchGenerator:
             # Default to llama-cpp for file paths
             return self._call_llama_cpp(prompt)
 
-    def _build_prompt(self, test_failure: TestFailure, repo_path: Path) -> str:
+    def build_prompt(self, test_failure: TestFailure, repo_path: Path) -> str:
         """Build a prompt for the LLM to generate a patch.
 
         Args:
@@ -136,6 +325,24 @@ class LLMPatchGenerator:
         Returns:
             Formatted prompt string
         """
+        # Try to get file content for context
+        file_context = ""
+        file_path = repo_path / test_failure.file_path
+        try:
+            file_content = file_path.read_text(encoding="utf-8")
+            file_context = f"""
+
+File Content ({test_failure.file_path}):
+```python
+{file_content}
+```
+"""
+        except (FileNotFoundError, UnicodeDecodeError):
+            file_context = f"""
+
+Note: File content not available for {test_failure.file_path}
+"""
+
         return f"""
 You are a code fixing assistant. Generate a unified diff patch to fix the failing test.
 
@@ -143,7 +350,7 @@ Test Information:
 - Test name: {test_failure.test_name}
 - File: {test_failure.file_path}
 - Error: {test_failure.error_output}
-
+{file_context}
 Please generate a unified diff patch that will fix this test failure.
 The patch should:
 1. Be in standard unified diff format

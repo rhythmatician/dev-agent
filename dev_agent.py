@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Dict, NoReturn
 
 from agent_lib.llm_patch_generator import LLMPatchGenerator
-from agent_lib.test_runner import run_tests
+from agent_lib.test_runner import TestFailure, run_tests
 
 
 # Custom exceptions for orchestrator error handling
@@ -52,6 +52,30 @@ class TestRunner:
     def run_tests(self, command: str) -> Dict[str, Any]:
         """Run tests and return results in dict format."""
         result = run_tests(command, self.repo_path)
+
+        # Check if this is a discovery error by examining the failure content
+        if (
+            not result.passed
+            and len(result.failures) == 1
+            and result.failures[0].test_name == result.failures[0].error_output
+        ):
+            # This indicates a discovery error (test_name == error_output)
+            return {
+                "status": "discovery_error",
+                "file_path": result.failures[0].file_path,
+                "error": result.failures[0].error_output,
+                "passed": result.passed,
+                "failures": [
+                    {
+                        "test_name": f.test_name,
+                        "file_path": f.file_path,
+                        "error_output": f.error_output,
+                    }
+                    for f in result.failures
+                ],
+                "raw_output": result.raw_output,
+            }
+
         return {
             "passed": result.passed,
             "failures": [
@@ -124,6 +148,51 @@ class GitTool:
         except subprocess.CalledProcessError:
             return False
 
+    def check_format_and_lint(self, file_path: str) -> Dict[str, Any]:
+        """Check format and lint compliance for a file.
+
+        Args:
+            file_path: Path to the file to check
+
+        Returns:
+            Dict with 'passed' bool and optional 'error' string
+        """
+        try:
+            # Check formatting with black (dry run)
+            black_result = subprocess.run(
+                ["black", "--check", "--diff", file_path],
+                capture_output=True,
+                text=True,
+            )
+
+            if black_result.returncode != 0:
+                return {
+                    "passed": False,
+                    "error": f"Format check failed: {black_result.stdout}",
+                }
+
+            # Check linting with flake8
+            flake8_result = subprocess.run(
+                ["flake8", "--max-line-length=88", "--extend-ignore=E203", file_path],
+                capture_output=True,
+                text=True,
+            )
+
+            if flake8_result.returncode != 0:
+                return {
+                    "passed": False,
+                    "error": f"Lint check failed: {flake8_result.stdout}",
+                }
+
+            # Both checks passed
+            return {"passed": True}
+
+        except subprocess.CalledProcessError as e:
+            return {
+                "passed": False,
+                "error": f"Failed to run format/lint checks: {e}",
+            }
+
 
 def _load_config() -> Dict[str, Any]:
     """Load configuration for the dev-agent orchestrator.
@@ -179,28 +248,41 @@ def main() -> NoReturn:
     max_iterations: int = config["max_iterations"]
     test_command: str = config["test_command"]
 
-    for iteration in range(max_iterations):
-        # Run tests
+    for iteration in range(max_iterations):  # Run tests
         try:
             test_result = test_runner.run_tests(test_command)
         except NoTestsFoundError:
             sys.exit(0)
 
-        # If tests pass, we're done
-        if test_result["passed"]:
+        # Declare variable for test failure
+        failure: TestFailure
+        # Check for discovery errors (syntax/import errors) - treat as special case
+        if test_result.get("status") == "discovery_error":
+            # For discovery errors, create a special failure info for LLM
+            failure = TestFailure(
+                test_name="discovery_error",
+                file_path=test_result["file_path"],
+                error_output=test_result["error"],
+            )
+            # Continue with normal patch generation process
+        elif test_result["passed"]:
             sys.exit(0)
-
-        # If no failures detected but tests didn't pass, treat as no tests found
-        if not test_result["failures"]:
+        elif not test_result["failures"]:
+            # If no failures detected but tests didn't pass, treat as no tests found
             raise NoTestsFoundError("No test failures detected")
-
-        # Generate patch for the first failure
-        failure = test_result["failures"][0]
-        patch_result = llm_generator.generate_patch(failure, Path(repo_path))
-
-        # Create branch for this fix attempt
+        else:  # Normal test failure
+            failure_dict = test_result["failures"][0]
+            # Convert dictionary to TestFailure object
+            failure = TestFailure(
+                test_name=failure_dict["test_name"],
+                file_path=failure_dict["file_path"],
+                error_output=failure_dict["error_output"],
+            )
+        patch_result = llm_generator.generate_patch(
+            failure, Path(repo_path)
+        )  # Create branch for this fix attempt
         branch_name = _sanitize_branch_name(
-            f"{config['git']['branch_prefix']}_{failure['test_name']}"
+            f"{config['git']['branch_prefix']}_{failure.test_name}"
         )
 
         # If not first iteration, add iteration number
@@ -219,10 +301,8 @@ def main() -> NoReturn:
 
             # Apply patch
             if not git_tool.apply_patch(patch_result.diff_content):
-                sys.exit(2)
-
-            # Commit the changes
-            commit_msg = f"TDD: fix {failure['test_name']}"
+                sys.exit(2)  # Commit the changes
+            commit_msg = f"TDD: fix {failure.test_name}"
             git_tool.commit(commit_msg)
 
             # Only push if tests pass after this fix
