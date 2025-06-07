@@ -15,12 +15,57 @@ Built on Microsoft's [AutoGen](https://github.com/microsoft/autogen) framework w
 
 ## 🚀 Quick Start
 
+### Command Line Usage
+
 ```bash
 # Install dev-agent
 pip install dev-agent
 
 # Run on your project
 dev-agent /path/to/your/project
+```
+
+### GitHub Action Usage
+
+To use Dev-Agent as a reusable Action in your workflow, add:
+
+```yaml
+uses: rhythmatician/dev-agent@v0.1.1
+with:
+  config: dev-agent.yaml
+  test-command: "pytest --maxfail=1"
+  max-iterations: "5"
+  auto-pr: "true"
+```
+
+**Complete workflow example:**
+
+```yaml
+name: "Auto-fix Tests with Dev Agent"
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  dev-agent:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      
+      - name: Run Dev Agent
+        uses: rhythmatician/dev-agent@v0.1.1
+        with:
+          test-command: "pytest -v"
+          max-iterations: "3"
+          auto-pr: "true"
 ```
 
 ## 📋 Development Status
