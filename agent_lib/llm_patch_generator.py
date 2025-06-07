@@ -297,6 +297,24 @@ Generate a corrected unified diff patch:"""
         Returns:
             Formatted prompt string
         """
+        # Try to get file content for context
+        file_context = ""
+        file_path = repo_path / test_failure.file_path
+        try:
+            file_content = file_path.read_text(encoding="utf-8")
+            file_context = f"""
+
+File Content ({test_failure.file_path}):
+```python
+{file_content}
+```
+"""
+        except (FileNotFoundError, UnicodeDecodeError):
+            file_context = f"""
+
+Note: File content not available for {test_failure.file_path}
+"""
+
         return f"""
 You are a code fixing assistant. Generate a unified diff patch to fix the failing test.
 
@@ -304,7 +322,7 @@ Test Information:
 - Test name: {test_failure.test_name}
 - File: {test_failure.file_path}
 - Error: {test_failure.error_output}
-
+{file_context}
 Please generate a unified diff patch that will fix this test failure.
 The patch should:
 1. Be in standard unified diff format
