@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dev-agent"
-version = "0.1.0"
+version = "0.1.1"
 description = "AutoGen-based multi-agent system for automated test fixing"
 readme = "README.md"
 requires-python = ">=3.11"

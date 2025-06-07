@@ -1,0 +1,34 @@
+# Dev-Agent Configuration
+# This file configures the behavior of the dev-agent system
+
+# Maximum number of iterations to attempt fixing tests
+max_iterations: 5
+
+# Command to run tests (customize for your project)
+test_command: "pytest --maxfail=1"
+
+# Git configuration
+git:
+  # Prefix for automated fix branches
+  branch_prefix: "dev-agent/fix"
+
+  # Remote repository name
+  remote: "origin"
+
+  # Automatically create pull requests for successful fixes
+  auto_pr: true
+
+# LLM configuration
+llm:
+  # Path to local LLM model
+  # Format: backend:path/to/model.gguf
+  # Supported backends: llama-cpp, ollama
+  model_path: "llama-cpp:models/codellama.gguf"
+
+# Metrics and reporting
+metrics:
+  # Enable metrics collection
+  enabled: true
+
+  # Path to store metrics (null = default location)
+  storage_path: null
