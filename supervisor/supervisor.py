@@ -131,6 +131,42 @@ class Supervisor:
         print(f"Subtask {subtask_num} completed successfully", file=sys.stderr)
         return True
 
+    def _generate_approval_check(
+        self, subtasks: List[Dict[str, Any]], story: str
+    ) -> Dict[str, Any]:
+        """Generate approval check for completed work.
+
+        Args:
+            subtasks: List of subtasks that were executed
+            story: The original story description
+
+        Returns:
+            Approval check dictionary with status, message, and summary
+        """
+        completed_subtasks = [s for s in subtasks if s["status"] == "completed"]
+        total_subtasks = len(subtasks)
+        completed_count = len(completed_subtasks)
+
+        if completed_count == total_subtasks and total_subtasks > 0:
+            # All subtasks completed successfully
+            status = "approved"
+            message = (
+                f"✅ Approved: All {completed_count} subtasks completed successfully"
+            )
+        else:
+            # Some subtasks failed
+            status = "rejected"
+            failed_count = total_subtasks - completed_count
+            message = f"❌ Rejected: {failed_count} of {total_subtasks} subtasks failed"
+
+        return {
+            "status": status,
+            "message": message,
+            "summary": f"Completed work for: {story}",
+            "completed_subtasks": completed_count,
+            "total_subtasks": total_subtasks,
+        }
+
     def run(self, story: str, dry_run: bool = False) -> int:
         """Run the supervisor with the given story.
 
@@ -160,16 +196,19 @@ class Supervisor:
         if dry_run:
             # In dry-run mode, just output the plan as JSON
             print(json.dumps(plan, indent=2))
-            return 0
-
-        # Execute the subtasks by calling dev-agent for each one
+            return 0  # Execute the subtasks by calling dev-agent for each one
         for i, subtask in enumerate(subtasks):
             success = self._execute_subtask(subtask, i + 1, len(subtasks))
             if not success:
+                # Generate rejection approval before exiting
+                approval = self._generate_approval_check(subtasks, story.strip())
+                print(f"❌ {approval['message']}", file=sys.stderr)
                 return 1  # Return the failure exit code
 
         # All subtasks completed successfully
         plan["status"] = "completed"
+        approval = self._generate_approval_check(subtasks, story.strip())
+        plan["approval"] = approval
         print(json.dumps(plan, indent=2))
         return 0
 
