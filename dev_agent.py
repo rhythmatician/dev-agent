@@ -164,7 +164,7 @@ class GitTool:
                 capture_output=True,
                 text=True,
             )
-            
+
             if black_result.returncode != 0:
                 return {
                     "passed": False,
@@ -177,7 +177,7 @@ class GitTool:
                 capture_output=True,
                 text=True,
             )
-            
+
             if flake8_result.returncode != 0:
                 return {
                     "passed": False,

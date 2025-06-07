@@ -80,7 +80,7 @@ def subtract(a, b):
             assert "def add(a, b):" in prompt
             assert "def multiply(a, b):" in prompt
             assert "def subtract(a, b):" in prompt
-            
+
             # Should include docstrings and comments
             assert "Add two numbers." in prompt
             assert "BUG: should be a * b" in prompt
@@ -102,6 +102,6 @@ def subtract(a, b):
             assert "test_nonexistent" in prompt
             assert "nonexistent.py" in prompt
             assert "ModuleNotFoundError" in prompt
-            
+
             # Should include a note about missing file
             assert "file content not available" in prompt.lower()

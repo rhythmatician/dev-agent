@@ -20,19 +20,19 @@ class TestLintAndFormatChecking:
 
     def test_git_tool_format_check_success(self) -> None:
         """Test successful format check before commit."""
-        git_tool = GitTool()        # Mock successful black and flake8 checks
+        git_tool = GitTool()  # Mock successful black and flake8 checks
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
 
             result = git_tool.check_format_and_lint("example.py")
-            
+
             # Should return success when both checks pass
             assert result["passed"] is True
             assert "error" not in result
 
     def test_git_tool_format_check_failure(self) -> None:
         """Test format check failure triggers re-prompting."""
-        git_tool = GitTool()        # Mock failed black check
+        git_tool = GitTool()  # Mock failed black check
         with patch("subprocess.run") as mock_run:
             # First call (black) fails, second call (flake8) not reached
             mock_run.return_value = MagicMock(
@@ -40,14 +40,15 @@ class TestLintAndFormatChecking:
             )
 
             result = git_tool.check_format_and_lint("example.py")
-            
+
             # Should return failure when format check fails
             assert result["passed"] is False
             assert "would reformat" in result["error"]
 
     def test_git_tool_lint_check_failure(self) -> None:
         """Test lint check failure triggers re-prompting."""
-        git_tool = GitTool()        # Mock successful black but failed flake8
+        git_tool = GitTool()  # Mock successful black but failed flake8
+
         def mock_subprocess_side_effect(*args, **kwargs):
             if "black" in args[0]:
                 return MagicMock(returncode=0)
@@ -61,7 +62,7 @@ class TestLintAndFormatChecking:
 
         with patch("subprocess.run", side_effect=mock_subprocess_side_effect):
             result = git_tool.check_format_and_lint("example.py")
-            
+
             # Should return failure when lint check fails
             assert result["passed"] is False
             assert "E302" in result["error"]
