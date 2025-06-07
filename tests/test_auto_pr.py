@@ -106,15 +106,20 @@ class TestAutoPRFeature:
         # Mock metrics
         mock_metrics_storage = MagicMock()
         mock_metrics = MagicMock()
-        mock_metrics_storage.load_metrics.return_value = mock_metrics
-
-        # Setup monkeypatches
+        mock_metrics_storage.load_metrics.return_value = (
+            mock_metrics  # Setup monkeypatches
+        )
         monkeypatch.setattr("dev_agent._load_config", lambda: mock_config)
         monkeypatch.setattr("dev_agent.TestRunner", lambda x: mock_test_runner)
         monkeypatch.setattr("dev_agent.LLMPatchGenerator", lambda x: mock_llm_generator)
         monkeypatch.setattr("dev_agent.GitTool", lambda: mock_git_tool)
         monkeypatch.setattr("dev_agent.MetricsStorage", lambda: mock_metrics_storage)
-        monkeypatch.setattr("time.time", lambda: 100)  # Mock time
+
+        # Mock time.time to return predictable values
+        # Need calls: start_time, iteration_start_time, iteration_end_time
+        mock_time = MagicMock()
+        mock_time.side_effect = [100.0, 100.2, 101.5]
+        monkeypatch.setattr("time.time", mock_time)
 
         # Act
         with pytest.raises(SystemExit) as exc_info:
@@ -168,9 +173,7 @@ class TestAutoPRFeature:
             },
             "llm": {"model_path": "llama-cpp:model"},
             "metrics": {"enabled": True, "storage_path": None},
-        }
-
-        # Mock metrics
+        }  # Mock metrics
         mock_metrics_storage = MagicMock()
         mock_metrics = MagicMock()
         mock_metrics_storage.load_metrics.return_value = mock_metrics
@@ -181,7 +184,12 @@ class TestAutoPRFeature:
         monkeypatch.setattr("dev_agent.LLMPatchGenerator", lambda x: mock_llm_generator)
         monkeypatch.setattr("dev_agent.GitTool", lambda: mock_git_tool)
         monkeypatch.setattr("dev_agent.MetricsStorage", lambda: mock_metrics_storage)
-        monkeypatch.setattr("time.time", lambda: 100)  # Mock time
+
+        # Mock time.time to return predictable values
+        # Need calls: start_time, iteration_start_time, iteration_end_time
+        mock_time = MagicMock()
+        mock_time.side_effect = [100.0, 100.2, 101.5]
+        monkeypatch.setattr("time.time", mock_time)
 
         # Act
         with pytest.raises(SystemExit) as exc_info:

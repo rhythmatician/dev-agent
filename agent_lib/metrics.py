@@ -26,11 +26,10 @@ Typical usage:
 
 import functools
 import json
-import os
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, TypeVar, cast
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 
 
 @dataclass
@@ -213,8 +212,17 @@ def record_metrics(
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
-            # Extract test name from arguments
-            test_name = args[0] if args else kwargs.get("test_name", "unknown")
+            # Extract test name more robustly
+            # Priority: explicit test_name kwarg > first positional arg > unknown
+            test_name = "unknown"
+            if "test_name" in kwargs:
+                test_name = str(kwargs["test_name"])
+            elif args and hasattr(args[0], "test_name"):
+                # If first arg is a TestFailure object with test_name attribute
+                test_name = str(args[0].test_name)
+            elif args:
+                # Fallback to first positional argument
+                test_name = str(args[0])
 
             # Load existing metrics
             storage = MetricsStorage()

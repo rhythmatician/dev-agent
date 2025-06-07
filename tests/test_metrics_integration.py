@@ -4,15 +4,13 @@ This test suite covers how the dev_agent orchestrator records and uses
 metrics during the patch generation process.
 """
 
-from pathlib import Path
-from typing import Dict
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from pytest import MonkeyPatch
 
 import dev_agent
-from agent_lib.metrics import DevAgentMetrics, PatchMetrics
+from agent_lib.metrics import DevAgentMetrics
 
 
 class TestDevAgentMetricsIntegration:
@@ -66,11 +64,16 @@ class TestDevAgentMetricsIntegration:
         monkeypatch.setattr("dev_agent.TestRunner", lambda x: mock_test_runner)
         monkeypatch.setattr("dev_agent.LLMPatchGenerator", lambda x: mock_llm_generator)
         monkeypatch.setattr("dev_agent.GitTool", lambda: mock_git_tool)
-        monkeypatch.setattr("dev_agent.MetricsStorage", lambda: mock_metrics_storage)
-
-        # Mock time.time to return predictable values
+        monkeypatch.setattr(
+            "dev_agent.MetricsStorage", lambda: mock_metrics_storage
+        )  # Mock time.time to return predictable values
+        # Need more calls: start_time, iteration_start_time, iteration_end_time
         mock_time = MagicMock()
-        mock_time.side_effect = [100.0, 101.5]  # 1.5 seconds duration
+        mock_time.side_effect = [
+            100.0,
+            100.2,
+            101.5,
+        ]  # start, iteration_start, iteration_end
         monkeypatch.setattr("time.time", mock_time)
 
         # Act
@@ -89,7 +92,7 @@ class TestDevAgentMetricsIntegration:
         assert saved_metrics.patch_results[0].model_name == "codellama"
         assert saved_metrics.patch_results[0].iterations == 1
         assert saved_metrics.patch_results[0].success is True
-        assert saved_metrics.patch_results[0].duration_ms == 1500  # 1.5 seconds
+        assert saved_metrics.patch_results[0].duration_ms == 1300  # 1.3 seconds
 
     def test_max_iterations_records_failure_metrics(
         self, monkeypatch: MonkeyPatch
@@ -140,11 +143,17 @@ class TestDevAgentMetricsIntegration:
         monkeypatch.setattr("dev_agent.TestRunner", lambda x: mock_test_runner)
         monkeypatch.setattr("dev_agent.LLMPatchGenerator", lambda x: mock_llm_generator)
         monkeypatch.setattr("dev_agent.GitTool", lambda: mock_git_tool)
-        monkeypatch.setattr("dev_agent.MetricsStorage", lambda: mock_metrics_storage)
-
-        # Mock time.time to return predictable values
+        monkeypatch.setattr(
+            "dev_agent.MetricsStorage", lambda: mock_metrics_storage
+        )  # Mock time.time to return predictable values
+        # Need calls: start_time, iteration_start_time (x2), final_end_time
         mock_time = MagicMock()
-        mock_time.side_effect = [100.0, 103.0]  # 3 seconds duration
+        mock_time.side_effect = [
+            100.0,
+            100.5,
+            101.0,
+            103.0,
+        ]  # start, iter1_start, iter2_start, final_end
         monkeypatch.setattr("time.time", mock_time)
 
         # Act
