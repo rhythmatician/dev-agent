@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Dict, NoReturn
 
 from agent_lib.llm_patch_generator import LLMPatchGenerator
-from agent_lib.test_runner import run_tests
+from agent_lib.test_runner import TestFailure, run_tests
 
 
 # Custom exceptions for orchestrator error handling
@@ -257,25 +257,30 @@ def main() -> NoReturn:
         # Check for discovery errors (syntax/import errors) - treat as special case
         if test_result.get("status") == "discovery_error":
             # For discovery errors, create a special failure info for LLM
-            failure = {
-                "test_name": "discovery_error",
-                "file_path": test_result["file_path"],
-                "error_output": test_result["error"],
-            }
+            failure = TestFailure(
+                test_name="discovery_error",
+                file_path=test_result["file_path"],
+                error_output=test_result["error"],
+            )
             # Continue with normal patch generation process
         elif test_result["passed"]:
             sys.exit(0)
         elif not test_result["failures"]:
             # If no failures detected but tests didn't pass, treat as no tests found
             raise NoTestsFoundError("No test failures detected")
-        else:
-            # Normal test failure
-            failure = test_result["failures"][0]
-        patch_result = llm_generator.generate_patch(failure, Path(repo_path))
-
-        # Create branch for this fix attempt
+        else:  # Normal test failure
+            failure_dict = test_result["failures"][0]
+            # Convert dictionary to TestFailure object
+            failure = TestFailure(
+                test_name=failure_dict["test_name"],
+                file_path=failure_dict["file_path"],
+                error_output=failure_dict["error_output"],
+            )
+        patch_result = llm_generator.generate_patch(
+            failure, Path(repo_path)
+        )  # Create branch for this fix attempt
         branch_name = _sanitize_branch_name(
-            f"{config['git']['branch_prefix']}_{failure['test_name']}"
+            f"{config['git']['branch_prefix']}_{failure.test_name}"
         )
 
         # If not first iteration, add iteration number
@@ -294,10 +299,8 @@ def main() -> NoReturn:
 
             # Apply patch
             if not git_tool.apply_patch(patch_result.diff_content):
-                sys.exit(2)
-
-            # Commit the changes
-            commit_msg = f"TDD: fix {failure['test_name']}"
+                sys.exit(2)  # Commit the changes
+            commit_msg = f"TDD: fix {failure.test_name}"
             git_tool.commit(commit_msg)
 
             # Only push if tests pass after this fix
