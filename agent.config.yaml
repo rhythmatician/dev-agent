@@ -5,6 +5,16 @@
 # and override values as needed.
 # ------------------------------------------------------------------
 
+# LLM configuration for different agent roles
+agents:
+  supervisor:
+    backend: "ollama"
+    model: "phi"
+  dev_agent:
+    backend: "llama-cpp"
+    model: "/models/codellama-13b.Q4_K_M.gguf"
+
+# Legacy model configuration (deprecated, use agents section instead)
 model:
   dev_agent: "llama-cpp:/models/codellama-13b.Q4_K_M.gguf" # code-capable LLM
   supervisor: "ollama:phi" # lightweight critic

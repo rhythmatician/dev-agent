@@ -87,7 +87,8 @@ class Supervisor:
         for attempt in range(self.max_retries + 1):  # +1 for initial attempt
             if attempt > 0:
                 print(
-                    f"Retrying subtask {subtask_num}/{total_subtasks} (attempt {attempt + 1}/{self.max_retries + 1}): {subtask['description']}",
+                    f"Retrying subtask {subtask_num}/{total_subtasks} "
+                    f"(attempt {attempt + 1}/{self.max_retries + 1}): {subtask['description']}",
                     file=sys.stderr,
                 )
             else:
@@ -144,7 +145,8 @@ class Supervisor:
 
             # All attempts exhausted
             print(
-                f"Error: dev-agent failed on subtask {subtask_num} after {self.max_retries + 1} attempts",
+                f"Error: dev-agent failed on subtask {subtask_num} "
+                f"after {self.max_retries + 1} attempts",
                 file=sys.stderr,
             )
             print(f"dev-agent stderr: {result.stderr}", file=sys.stderr)

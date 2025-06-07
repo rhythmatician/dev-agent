@@ -84,8 +84,6 @@ def test_supervisor_respects_max_retries_limit():
 
 def test_supervisor_default_retry_behavior():
     """Test that supervisor has sensible default retry behavior."""
-    story = "Simple task."
-
     # Test the supervisor directly with mocking
     with patch("supervisor.supervisor.subprocess.run") as mock_run:
         # Configure mock to succeed on first try

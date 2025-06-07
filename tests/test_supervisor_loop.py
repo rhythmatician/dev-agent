@@ -7,11 +7,10 @@ the Dev-Agent for each one, handling success and failure scenarios.
 import json
 import subprocess
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 
-def test_supervisor_iterates_over_subtasks():
+def test_supervisor_iterates_over_subtasks() -> None:
     """Test that supervisor calls dev-agent for each subtask."""
     story = "Create a calculator. Add functions for add and subtract."
 
@@ -30,7 +29,7 @@ def test_supervisor_iterates_over_subtasks():
     assert len(plan["subtasks"]) >= 2
 
 
-def test_supervisor_fails_fast_on_dev_agent_error():
+def test_supervisor_fails_fast_on_dev_agent_error() -> None:
     """Test that supervisor aborts if dev-agent returns nonzero on a subtask."""
     story = "Create failing tests and fix them."
 
@@ -54,7 +53,7 @@ def test_supervisor_fails_fast_on_dev_agent_error():
         assert mock_run.call_count == 1
 
 
-def test_supervisor_proceeds_only_after_subtask_success():
+def test_supervisor_proceeds_only_after_subtask_success() -> None:
     """Test that supervisor proceeds to subtask2 only if subtask1 passes."""
     # This test will be implemented once we have the loop logic
     # For now, it documents the expected behavior
@@ -79,7 +78,7 @@ def test_supervisor_proceeds_only_after_subtask_success():
     assert len(plan["subtasks"]) >= 3
 
 
-def test_supervisor_handles_empty_subtask_list():
+def test_supervisor_handles_empty_subtask_list() -> None:
     """Test that supervisor handles the case when no subtasks are generated."""
     # Edge case: story that doesn't generate meaningful subtasks
     story = "."
@@ -95,7 +94,7 @@ def test_supervisor_handles_empty_subtask_list():
     assert "error" in result.stderr.lower() or "no" in result.stderr.lower()
 
 
-def test_supervisor_respects_max_retries():
+def test_supervisor_respects_max_retries() -> None:
     """Test that supervisor respects retry limits for failing subtasks."""
     # This test will be implemented once we have retry logic
     # For now, it documents the expected behavior
