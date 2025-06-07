@@ -16,10 +16,17 @@ For full documentation, see: docs/PROJECT-OUTLINE.md
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import Any, Dict, NoReturn
+from typing import Any, Dict, NoReturn, Optional, Tuple
 
 from agent_lib.llm_patch_generator import LLMPatchGenerator
+from agent_lib.metrics import (
+    DevAgentMetrics,
+    MetricsStorage,
+    PatchMetrics,
+    generate_metrics_report,
+)
 from agent_lib.test_runner import TestFailure, run_tests
 
 
@@ -194,6 +201,46 @@ class GitTool:
             }
 
 
+def _sanitize_branch_name(name: str) -> str:
+    """Sanitize branch name to follow git naming conventions."""
+    # Preserve the branch prefix structure (e.g., "dev-agent/fix")
+    prefix_parts = name.split("_", 1)
+    if len(prefix_parts) < 2:
+        return name  # No underscore found
+
+    prefix, rest = prefix_parts
+
+    # Replace colons and double colons with hyphens
+    rest = re.sub(r"::", "-", rest)
+    rest = re.sub(r":", "-", rest)
+
+    # Replace spaces with hyphens
+    rest = rest.replace(" ", "-")
+
+    # Return with original prefix structure intact
+    return f"{prefix}_{rest}"
+
+
+def _parse_model_path(model_path: str) -> Tuple[str, str]:
+    """Parse model path into backend and model name.
+
+    Args:
+        model_path: Path to model in format "backend:/path/to/model.gguf"
+                   or "backend:model_name"
+
+    Returns:
+        Tuple of (backend, model_name)
+    """
+    if ":" in model_path:
+        backend, model_path_part = model_path.split(":", 1)
+        # Extract model name from path
+        model_name = Path(model_path_part).stem
+        return backend, model_name
+    else:
+        # Default to llama-cpp if no prefix
+        return "llama-cpp", Path(model_path).stem
+
+
 def _load_config() -> Dict[str, Any]:
     """Load configuration for the dev-agent orchestrator.
 
@@ -208,20 +255,17 @@ def _load_config() -> Dict[str, Any]:
     return {
         "max_iterations": 5,
         "test_command": "pytest --maxfail=1",
-        "git": {"branch_prefix": "dev-agent/fix"},
-        "llm": {"model_path": "models/codellama.gguf"},
+        "git": {
+            "branch_prefix": "dev-agent/fix",
+            "remote": "origin",
+            "auto_pr": True,
+        },
+        "llm": {"model_path": "llama-cpp:models/codellama.gguf"},
+        "metrics": {
+            "enabled": True,
+            "storage_path": None,  # Use default path
+        },
     }
-
-
-def _sanitize_branch_name(name: str) -> str:
-    """Sanitize branch name to follow git naming conventions."""
-    # Replace invalid characters with dashes
-    sanitized = re.sub(r"[^a-zA-Z0-9\-_./]", "-", name)
-    # Remove consecutive dashes
-    sanitized = re.sub(r"-+", "-", sanitized)
-    # Remove leading/trailing dashes
-    sanitized = sanitized.strip("-")
-    return sanitized
 
 
 def main() -> NoReturn:
@@ -235,6 +279,11 @@ def main() -> NoReturn:
         1: General error or max iterations reached
         2: Patch validation/application failure
     """
+    # Setup metrics
+    metrics_storage = MetricsStorage()
+    metrics = DevAgentMetrics()
+    start_time = time.time()
+
     try:
         config = _load_config()
     except ConfigError:
@@ -242,6 +291,7 @@ def main() -> NoReturn:
     repo_path = "."  # Current directory for now
     test_runner = TestRunner(repo_path)
     model_path: str = config["llm"]["model_path"]
+    llm_backend, model_name = _parse_model_path(model_path)
     llm_generator = LLMPatchGenerator(model_path)
     git_tool = GitTool()
 
@@ -308,12 +358,55 @@ def main() -> NoReturn:
             # Only push if tests pass after this fix
             retest_result = test_runner.run_tests(test_command)
             if retest_result["passed"]:
+                # Record successful metrics
+                end_time = time.time()
+                duration_ms = int((end_time - start_time) * 1000)
+                patch_metrics = PatchMetrics(
+                    test_name=failure.test_name,
+                    llm_backend=llm_backend,
+                    model_name=model_name,
+                    iterations=iteration + 1,
+                    success=True,
+                    duration_ms=duration_ms,
+                )
+                metrics.add_patch_result(patch_metrics)
+                metrics_storage.save_metrics(metrics)
+
+                # Generate and print report
+                report = generate_metrics_report(metrics)
+                print("\n" + report)
+
                 git_tool.push()
                 sys.exit(0)
         except PatchApplicationError:
             sys.exit(2)
 
     # If we reach here, max iterations was reached
+    # Record failure metrics
+    end_time = time.time()
+    duration_ms = int((end_time - start_time) * 1000)
+
+    # Make sure we have a failure object to record metrics for
+    if "failure" in locals():
+        test_name = failure.test_name
+    else:
+        test_name = "unknown_failure"
+
+    patch_metrics = PatchMetrics(
+        test_name=test_name,
+        llm_backend=llm_backend,
+        model_name=model_name,
+        iterations=max_iterations,
+        success=False,
+        duration_ms=duration_ms,
+    )
+    metrics.add_patch_result(patch_metrics)
+    metrics_storage.save_metrics(metrics)
+
+    # Generate and print failure report
+    report = generate_metrics_report(metrics)
+    print("\n" + report)
+
     sys.exit(1)
 
 

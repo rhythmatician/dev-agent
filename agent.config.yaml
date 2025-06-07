@@ -6,16 +6,20 @@
 # ------------------------------------------------------------------
 
 model:
-  dev_agent: "llama-cpp:/models/codellama-13b.Q4_K_M.gguf"  # code-capable LLM
-  supervisor: "ollama:phi"                                  # lightweight critic
+  dev_agent: "llama-cpp:/models/codellama-13b.Q4_K_M.gguf" # code-capable LLM
+  supervisor: "ollama:phi" # lightweight critic
 
-test_command: "pytest --maxfail=1"  # single-failure loop; override per project
-max_iterations: 5                   # safety stop to avoid infinite loops
+test_command: "pytest --maxfail=1" # single-failure loop; override per project
+max_iterations: 5 # safety stop to avoid infinite loops
 
 git:
-  remote: "origin"                  # default remote name
-  branch_prefix: "dev-agent/fix"    # e.g., dev-agent/fix-test_addition
-  auto_pr: true                     # open PR via `gh` CLI after commit
+  remote: "origin" # default remote name
+  branch_prefix: "dev-agent/fix" # e.g., dev-agent/fix-test_addition
+  auto_pr: true # open PR via `gh` CLI after commit
+
+metrics:
+  enabled: true # collect and report metrics
+  storage_path: null # default to ~/.dev-agent/metrics.json
 
 shell:
   whitelist:
