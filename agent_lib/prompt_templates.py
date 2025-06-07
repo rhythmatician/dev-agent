@@ -58,7 +58,8 @@ Generate a unified diff patch:"""
 # Retry prompt for syntax errors
 SYNTAX_ERROR_RETRY_TEMPLATE = """{original_prompt}
 
-IMPORTANT: Your previous patch had syntax errors. Please ensure the patch compiles without syntax errors.
+IMPORTANT: Your previous patch had syntax errors.
+Please ensure the patch compiles without syntax errors.
 
 Previous invalid patch:
 {previous_patch}
@@ -68,7 +69,8 @@ Generate a corrected unified diff patch:"""
 # Retry prompt for format/lint errors
 FORMAT_LINT_RETRY_TEMPLATE = """{original_prompt}
 
-IMPORTANT: Your patch broke formatting or linting. Please adjust so that it passes `black` and `flake8` without changing style elsewhere.
+IMPORTANT: Your patch broke formatting or linting.
+Please adjust so that it passes `black` and `flake8` without changing style elsewhere.
 
 Format/lint errors:
 {format_lint_errors}

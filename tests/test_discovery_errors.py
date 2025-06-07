@@ -6,11 +6,8 @@ Following TDD principles for V1 enhancements.
 """
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-import pytest
-
-from agent_lib.test_runner import TestResult, check_for_discovery_errors, run_tests
+from agent_lib.test_runner import check_for_discovery_errors, run_tests
 
 
 class TestDiscoveryErrorDetection:

@@ -19,6 +19,7 @@ Typical usage:
 """
 
 import ast
+import logging
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,12 +49,10 @@ def apply_diff_to_source(original_source: str, diff_content: str) -> str:
     hunk_start = None
     for i, line in enumerate(diff_lines):
         if line.startswith("@@"):
-            hunk_start = i + 1
-            # Parse the hunk header: @@ -old_start,old_count +new_start,new_count @@
-            parts = line.split()
-            if len(parts) >= 3:
-                old_info = parts[1][1:]  # Remove '-'
-                old_start = int(old_info.split(",")[0]) - 1  # Convert to 0-based
+            hunk_start = (
+                i + 1
+            )  # Parse the hunk header: @@ -old_start,old_count +new_start,new_count @@
+            # We don't need to parse the line numbers for our implementation
             break
 
     if hunk_start is None:
@@ -64,6 +63,7 @@ def apply_diff_to_source(original_source: str, diff_content: str) -> str:
     original_line_idx = 0
 
     for line in diff_lines[hunk_start:]:
+
         if line.startswith(" "):
             # Context line - copy from original
             if original_line_idx < len(lines):
@@ -73,8 +73,22 @@ def apply_diff_to_source(original_source: str, diff_content: str) -> str:
             # Deletion - skip original line
             original_line_idx += 1
         elif line.startswith("+"):
-            # Addition - add new line
-            result_lines.append(line[1:] + "\n")
+            # Addition - add new line, preserving newline consistency
+            # Check if the line already ends with newline
+            new_content = line[1:]
+            if not new_content.endswith(("\n", "\r\n")):
+                # Determine appropriate newline from existing content
+                if original_line_idx > 0 and lines[original_line_idx - 1].endswith(
+                    "\r\n"
+                ):
+                    new_content += "\r\n"
+                elif original_line_idx > 0 and lines[original_line_idx - 1].endswith(
+                    "\n"
+                ):
+                    new_content += "\n"
+                else:
+                    new_content += "\n"
+            result_lines.append(new_content)
 
     # Add remaining original lines
     while original_line_idx < len(lines):
@@ -237,10 +251,24 @@ Generate a corrected unified diff patch:"""
                         error_output=retry_prompt,
                     )
                     diff_content = self._call_llm(retry_failure, repo_path)
-
-                # Validate syntax using AST
+                    # Validate syntax using AST
                 if self.ast_validate_patch(diff_content, original_source):
                     return PatchResult(diff_content=diff_content)
+                else:
+                    # Log diagnostic information for AST validation failure
+                    logging.error(
+                        "AST validation failed for the generated patch "
+                        "(attempt %d/%d). Diff content:\n%s\n"
+                        "Original source preview (first 500 chars):\n%s",
+                        attempt + 1,
+                        max_retries + 1,
+                        diff_content,
+                        (
+                            original_source[:500] + "..."
+                            if len(original_source) > 500
+                            else original_source
+                        ),
+                    )
 
             except Exception as e:
                 if attempt == max_retries:
@@ -276,7 +304,7 @@ Generate a corrected unified diff patch:"""
             Exception: If LLM call fails
         """
         # Construct the prompt for the LLM
-        prompt = self._build_prompt(test_failure, repo_path)
+        prompt = self.build_prompt(test_failure, repo_path)
 
         # Determine backend and call appropriate method
         if self.model_path.startswith("ollama:"):
@@ -287,7 +315,7 @@ Generate a corrected unified diff patch:"""
             # Default to llama-cpp for file paths
             return self._call_llama_cpp(prompt)
 
-    def _build_prompt(self, test_failure: TestFailure, repo_path: Path) -> str:
+    def build_prompt(self, test_failure: TestFailure, repo_path: Path) -> str:
         """Build a prompt for the LLM to generate a patch.
 
         Args:

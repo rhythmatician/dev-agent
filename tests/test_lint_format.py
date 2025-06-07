@@ -5,13 +5,12 @@ formatting and linting before committing patches.
 Following TDD principles for V1 enhancements.
 """
 
-import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 import dev_agent
+from agent_lib.config_schema import AgentConfig, GitConfig, LLMConfig
 from dev_agent import GitTool
 
 
@@ -49,7 +48,7 @@ class TestLintAndFormatChecking:
         """Test lint check failure triggers re-prompting."""
         git_tool = GitTool()  # Mock successful black but failed flake8
 
-        def mock_subprocess_side_effect(*args, **kwargs):
+        def mock_subprocess_side_effect(*args: tuple, **kwargs: dict) -> MagicMock:
             if "black" in args[0]:
                 return MagicMock(returncode=0)
             elif "flake8" in args[0]:
@@ -81,7 +80,9 @@ class TestLintAndFormatChecking:
             # For now, just test the existing functionality
             assert result is True
 
-    def test_orchestrator_handles_format_failure(self, monkeypatch) -> None:
+    def test_orchestrator_handles_format_failure(
+        self: "TestLintAndFormatChecking", monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that orchestrator re-prompts LLM on format/lint failure."""
         # TODO: This test documents the intended integration behavior
         # The orchestrator should catch format/lint failures and re-prompt
@@ -113,13 +114,20 @@ class TestLintAndFormatChecking:
         mock_git_tool.check_format_and_lint.return_value = {
             "passed": False,
             "error": "Format check failed",
+        }  # Define mock config using TypedDict for better type checking
+        mock_git_config: GitConfig = {
+            "branch_prefix": "dev-agent/fix",
         }
 
-        mock_config = {
+        mock_llm_config: LLMConfig = {
+            "model_path": "models/test.gguf",
+        }
+
+        mock_config: AgentConfig = {
             "max_iterations": 5,
             "test_command": "pytest --maxfail=1",
-            "git": {"branch_prefix": "dev-agent/fix"},
-            "llm": {"model_path": "models/test.gguf"},
+            "git": mock_git_config,
+            "llm": mock_llm_config,
         }
 
         monkeypatch.setattr("dev_agent._load_config", lambda: mock_config)

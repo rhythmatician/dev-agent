@@ -39,7 +39,8 @@ def test_example():
 """
 
         with patch("pathlib.Path.read_text", return_value=file_content):
-            prompt = generator.build_prompt(test_failure, Path("/test/repo"))
+
+            prompt = generator._build_prompt(test_failure, Path("/test/repo"))
 
             # Should include the full file content
             assert "def example_function():" in prompt
@@ -72,7 +73,7 @@ def subtract(a, b):
 """
 
         with patch("pathlib.Path.read_text", return_value=file_content):
-            prompt = generator.build_prompt(test_failure, Path("/test/repo"))
+            prompt = generator._build_prompt(test_failure, Path("/test/repo"))
 
             # Should include all functions for context
             assert "def add(a, b):" in prompt
@@ -94,7 +95,7 @@ def subtract(a, b):
         )
 
         with patch("pathlib.Path.read_text", side_effect=FileNotFoundError()):
-            prompt = generator.build_prompt(test_failure, Path("/test/repo"))
+            prompt = generator._build_prompt(test_failure, Path("/test/repo"))
 
             # Should still include basic test information
             assert "test_nonexistent" in prompt
