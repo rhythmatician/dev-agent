@@ -5,3 +5,4 @@ venv/*
 .coverage
 =1.0.0
 *output.txt
+flake8_*.txt
