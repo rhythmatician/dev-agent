@@ -5,7 +5,6 @@ for the dev-agent system. These metrics are part of Phase 5 features
 to track performance, iteration counts, and success rates.
 """
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
