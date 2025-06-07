@@ -254,6 +254,8 @@ def main() -> NoReturn:
         except NoTestsFoundError:
             sys.exit(0)
 
+        # Declare variable for test failure
+        failure: TestFailure
         # Check for discovery errors (syntax/import errors) - treat as special case
         if test_result.get("status") == "discovery_error":
             # For discovery errors, create a special failure info for LLM
