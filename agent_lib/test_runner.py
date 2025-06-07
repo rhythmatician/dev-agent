@@ -19,11 +19,13 @@ Typical usage:
             print(f"Failed: {failure.test_name} in {failure.file_path}")
 """
 
+import py_compile
+import re
 import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Optional
 
 # Constants for magic numbers and configuration
 DEFAULT_TIMEOUT_SECONDS = 30
@@ -61,8 +63,22 @@ def run_tests(command: str, repo_path: Path) -> TestResult:
         result = run_tests("pytest --maxfail=1", Path("/path/to/project"))
         if not result.passed:
             for failure in result.failures:
-                print(f"Failed: {failure.test_name} in {failure.file_path}")
-    """
+                print(f"Failed: {failure.test_name} in {failure.file_path}")"""
+
+    # Fast syntax pre-check before running pytest
+    syntax_error = fast_syntax_precheck(repo_path)
+    if syntax_error:
+        return TestResult(
+            passed=False,
+            failures=[
+                TestFailure(
+                    test_name=syntax_error["error"],
+                    file_path=syntax_error["file_path"],
+                    error_output=syntax_error["error"],
+                )
+            ],
+            raw_output=f"Syntax error detected: {syntax_error['error']}",
+        )
 
     # For cross-platform compatibility, detect if pytest is available
     # and use appropriate command format
@@ -108,10 +124,95 @@ def run_tests(command: str, repo_path: Path) -> TestResult:
     if proc.returncode == PYTEST_NO_TESTS_EXIT_CODE:
         return TestResult(passed=True, failures=[], raw_output=output)
 
+    # Check for discovery errors like syntax or import errors
+    discovery_error = check_for_discovery_errors(proc.stdout, proc.stderr)
+    if discovery_error:
+        return TestResult(
+            passed=False,
+            failures=[
+                TestFailure(
+                    test_name=discovery_error["error"],
+                    file_path=discovery_error["file_path"],
+                    error_output=discovery_error["error"],
+                )
+            ],
+            raw_output=output,
+        )
+
     # Parse failures from pytest output
     failures = _parse_pytest_failures(output)
 
     return TestResult(passed=False, failures=failures, raw_output=output)
+
+
+def check_for_discovery_errors(stdout: str, stderr: str) -> Optional[Dict[str, Any]]:
+    """Check pytest output for discovery errors like syntax or import errors.
+
+    Args:
+        stdout: Standard output from pytest command
+        stderr: Standard error from pytest command
+
+    Returns:
+        Dict with discovery error info if found, None otherwise.
+        Dict contains: status, file_path, error
+    """
+    combined_output = stdout + stderr
+
+    # Check for syntax errors
+    syntax_error_pattern = r"(\S+\.py):(\d+): SyntaxError: (.+)"
+    syntax_match = re.search(syntax_error_pattern, combined_output)
+    if syntax_match:
+        file_path, line_num, error_msg = syntax_match.groups()
+        return {
+            "status": "discovery_error",
+            "file_path": file_path,
+            "error": f"SyntaxError: {error_msg} (line {line_num})",
+        }
+
+    # Check for import errors
+    import_error_pattern = r"ImportError while importing test module '([^']+)'"
+    import_match = re.search(import_error_pattern, combined_output)
+    if import_match:
+        file_path = import_match.group(1)
+        # Extract the actual import error details
+        module_error_pattern = r"(ModuleNotFoundError|ImportError): (.+)"
+        module_match = re.search(module_error_pattern, combined_output)
+        if module_match:
+            error_type, error_msg = module_match.groups()
+            return {
+                "status": "discovery_error",
+                "file_path": file_path,
+                "error": f"{error_type}: {error_msg}",
+            }
+        else:
+            return {
+                "status": "discovery_error",
+                "file_path": file_path,
+                "error": "Import error during test discovery",
+            }
+
+    return None
+
+
+def fast_syntax_precheck(repo_path: Path) -> Optional[Dict[str, Any]]:
+    """Perform fast syntax-only pre-check on all Python files.
+
+    Args:
+        repo_path: Path to the repository to check
+
+    Returns:
+        Dict with discovery error info if syntax error found, None otherwise
+    """
+    for py_file in repo_path.rglob("*.py"):
+        try:
+            py_compile.compile(str(py_file), doraise=True)
+        except py_compile.PyCompileError as e:
+            return {
+                "status": "discovery_error",
+                "file_path": str(py_file.relative_to(repo_path)),
+                "error": str(e),
+            }
+    return None
 
 
 def _extract_error_message(output: str, test_nodeid: str) -> str:
