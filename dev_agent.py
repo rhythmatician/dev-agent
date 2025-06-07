@@ -16,10 +16,17 @@ For full documentation, see: docs/PROJECT-OUTLINE.md
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import Any, Dict, NoReturn
+from typing import Any, Dict, NoReturn, Optional, Tuple
 
 from agent_lib.llm_patch_generator import LLMPatchGenerator
+from agent_lib.metrics import (
+    DevAgentMetrics,
+    MetricsStorage,
+    PatchMetrics,
+    generate_metrics_report,
+)
 from agent_lib.test_runner import TestFailure, run_tests
 
 
@@ -148,6 +155,40 @@ class GitTool:
         except subprocess.CalledProcessError:
             return False
 
+    def open_pr(self, title: str, body: str) -> bool:
+        """Open a pull request using GitHub CLI.
+
+        Args:
+            title: The title of the pull request
+            body: The body/description of the pull request
+
+        Returns:
+            True if PR was created successfully, False otherwise
+        """
+        try:
+            # Use GitHub CLI (gh) to create a PR
+            # --fill will use the commit message if title is not provided
+            subprocess.run(
+                [
+                    "gh",
+                    "pr",
+                    "create",
+                    "--title",
+                    title,
+                    "--body",
+                    body,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return True
+        except Exception:
+            # Catch any errors during PR creation
+            # This includes subprocess.CalledProcessError and any others
+            # that might occur if gh CLI is not installed or configured
+            return False
+
     def check_format_and_lint(self, file_path: str) -> Dict[str, Any]:
         """Check format and lint compliance for a file.
 
@@ -194,6 +235,46 @@ class GitTool:
             }
 
 
+def _sanitize_branch_name(name: str) -> str:
+    """Sanitize branch name to follow git naming conventions."""
+    # Preserve the branch prefix structure (e.g., "dev-agent/fix")
+    prefix_parts = name.split("_", 1)
+    if len(prefix_parts) < 2:
+        return name  # No underscore found
+
+    prefix, rest = prefix_parts
+
+    # Replace colons and double colons with hyphens
+    rest = re.sub(r"::", "-", rest)
+    rest = re.sub(r":", "-", rest)
+
+    # Replace spaces with hyphens
+    rest = rest.replace(" ", "-")
+
+    # Return with original prefix structure intact
+    return f"{prefix}_{rest}"
+
+
+def _parse_model_path(model_path: str) -> Tuple[str, str]:
+    """Parse model path into backend and model name.
+
+    Args:
+        model_path: Path to model in format "backend:/path/to/model.gguf"
+                   or "backend:model_name"
+
+    Returns:
+        Tuple of (backend, model_name)
+    """
+    if ":" in model_path:
+        backend, model_path_part = model_path.split(":", 1)
+        # Extract model name from path
+        model_name = Path(model_path_part).stem
+        return backend, model_name
+    else:
+        # Default to llama-cpp if no prefix
+        return "llama-cpp", Path(model_path).stem
+
+
 def _load_config() -> Dict[str, Any]:
     """Load configuration for the dev-agent orchestrator.
 
@@ -208,20 +289,17 @@ def _load_config() -> Dict[str, Any]:
     return {
         "max_iterations": 5,
         "test_command": "pytest --maxfail=1",
-        "git": {"branch_prefix": "dev-agent/fix"},
-        "llm": {"model_path": "models/codellama.gguf"},
+        "git": {
+            "branch_prefix": "dev-agent/fix",
+            "remote": "origin",
+            "auto_pr": True,
+        },
+        "llm": {"model_path": "llama-cpp:models/codellama.gguf"},
+        "metrics": {
+            "enabled": True,
+            "storage_path": None,  # Use default path
+        },
     }
-
-
-def _sanitize_branch_name(name: str) -> str:
-    """Sanitize branch name to follow git naming conventions."""
-    # Replace invalid characters with dashes
-    sanitized = re.sub(r"[^a-zA-Z0-9\-_./]", "-", name)
-    # Remove consecutive dashes
-    sanitized = re.sub(r"-+", "-", sanitized)
-    # Remove leading/trailing dashes
-    sanitized = sanitized.strip("-")
-    return sanitized
 
 
 def main() -> NoReturn:
@@ -235,6 +313,11 @@ def main() -> NoReturn:
         1: General error or max iterations reached
         2: Patch validation/application failure
     """
+    # Setup metrics
+    metrics_storage = MetricsStorage()
+    metrics = DevAgentMetrics()
+    start_time = time.time()
+
     try:
         config = _load_config()
     except ConfigError:
@@ -242,24 +325,32 @@ def main() -> NoReturn:
     repo_path = "."  # Current directory for now
     test_runner = TestRunner(repo_path)
     model_path: str = config["llm"]["model_path"]
+    llm_backend, model_name = _parse_model_path(model_path)
     llm_generator = LLMPatchGenerator(model_path)
     git_tool = GitTool()
 
     max_iterations: int = config["max_iterations"]
     test_command: str = config["test_command"]
+    # Auto PR configuration
+    auto_pr_enabled: bool = config["git"].get("auto_pr", False)
 
-    for iteration in range(max_iterations):  # Run tests
+    # Track if we have a failure object for metrics
+    current_failure: Optional[TestFailure] = None
+
+    for iteration in range(max_iterations):
+        # Start timing for this iteration
+        iteration_start_time = time.time()
+
+        # Run tests
         try:
             test_result = test_runner.run_tests(test_command)
         except NoTestsFoundError:
             sys.exit(0)
 
-        # Declare variable for test failure
-        failure: TestFailure
         # Check for discovery errors (syntax/import errors) - treat as special case
         if test_result.get("status") == "discovery_error":
             # For discovery errors, create a special failure info for LLM
-            failure = TestFailure(
+            current_failure = TestFailure(
                 test_name="discovery_error",
                 file_path=test_result["file_path"],
                 error_output=test_result["error"],
@@ -273,16 +364,16 @@ def main() -> NoReturn:
         else:  # Normal test failure
             failure_dict = test_result["failures"][0]
             # Convert dictionary to TestFailure object
-            failure = TestFailure(
+            current_failure = TestFailure(
                 test_name=failure_dict["test_name"],
                 file_path=failure_dict["file_path"],
                 error_output=failure_dict["error_output"],
             )
         patch_result = llm_generator.generate_patch(
-            failure, Path(repo_path)
+            current_failure, Path(repo_path)
         )  # Create branch for this fix attempt
         branch_name = _sanitize_branch_name(
-            f"{config['git']['branch_prefix']}_{failure.test_name}"
+            f"{config['git']['branch_prefix']}_{current_failure.test_name}"
         )
 
         # If not first iteration, add iteration number
@@ -302,18 +393,75 @@ def main() -> NoReturn:
             # Apply patch
             if not git_tool.apply_patch(patch_result.diff_content):
                 sys.exit(2)  # Commit the changes
-            commit_msg = f"TDD: fix {failure.test_name}"
+            commit_msg = f"TDD: fix {current_failure.test_name}"
             git_tool.commit(commit_msg)
 
             # Only push if tests pass after this fix
             retest_result = test_runner.run_tests(test_command)
             if retest_result["passed"]:
-                git_tool.push()
+                # Record successful metrics
+                iteration_end_time = time.time()
+                duration_ms = round((iteration_end_time - iteration_start_time) * 1000)
+                patch_metrics = PatchMetrics(
+                    test_name=current_failure.test_name,
+                    llm_backend=llm_backend,
+                    model_name=model_name,
+                    iterations=iteration + 1,
+                    success=True,
+                    duration_ms=duration_ms,
+                )
+                metrics.add_patch_result(patch_metrics)
+                metrics_storage.save_metrics(metrics)
+
+                # Generate and print report
+                report = generate_metrics_report(metrics)
+                print("\n" + report)
+
+                # Push changes
+                if git_tool.push():
+                    # Create PR if enabled
+                    if auto_pr_enabled:
+                        pr_title = f"Fix {current_failure.test_name}"
+                        pr_body = (
+                            f"This PR was automatically generated by Dev Agent to "
+                            f"fix failing test: {current_failure.test_name}.\n\n"
+                            f"The fix was applied after {iteration + 1} "
+                            f"iteration(s).\n\n"
+                            f"LLM Backend: {llm_backend}\n"
+                            f"Model: {model_name}"
+                        )
+                        git_tool.open_pr(pr_title, pr_body)
+
                 sys.exit(0)
         except PatchApplicationError:
             sys.exit(2)
 
     # If we reach here, max iterations was reached
+    # Record failure metrics
+    final_end_time = time.time()
+    total_duration_ms = round((final_end_time - start_time) * 1000)
+
+    # Make sure we have a failure object to record metrics for
+    if current_failure:
+        test_name = current_failure.test_name
+    else:
+        test_name = "unknown_failure"
+
+    patch_metrics = PatchMetrics(
+        test_name=test_name,
+        llm_backend=llm_backend,
+        model_name=model_name,
+        iterations=max_iterations,
+        success=False,
+        duration_ms=total_duration_ms,
+    )
+    metrics.add_patch_result(patch_metrics)
+    metrics_storage.save_metrics(metrics)
+
+    # Generate and print failure report
+    report = generate_metrics_report(metrics)
+    print("\n" + report)
+
     sys.exit(1)
 
 
