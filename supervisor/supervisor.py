@@ -152,6 +152,9 @@ class Supervisor:
             print(f"dev-agent stderr: {result.stderr}", file=sys.stderr)
             return False
 
+        # This should never be reached, but mypy requires all code paths to return
+        return False
+
     def _generate_approval_check(
         self, subtasks: List[Dict[str, Any]], story: str
     ) -> Dict[str, Any]:
