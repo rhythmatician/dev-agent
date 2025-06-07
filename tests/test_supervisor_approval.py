@@ -24,6 +24,7 @@ def test_supervisor_provides_approval_check_for_completed_work():
         )
 
         from supervisor.supervisor import Supervisor
+
         supervisor = Supervisor()
         exit_code = supervisor.run(story, dry_run=False)
 
@@ -46,12 +47,13 @@ def test_supervisor_approves_when_all_subtasks_complete():
         )
 
         from supervisor.supervisor import Supervisor
+
         supervisor = Supervisor()
-        
+
         # Capture stdout to check the JSON output
         import io
         from contextlib import redirect_stdout
-        
+
         captured_output = io.StringIO()
         with redirect_stdout(captured_output):
             exit_code = supervisor.run(story, dry_run=False)
@@ -59,7 +61,7 @@ def test_supervisor_approves_when_all_subtasks_complete():
         assert exit_code == 0
         output = captured_output.getvalue()
         plan = json.loads(output)
-        
+
         # Should be approved when all subtasks complete
         assert plan["approval"]["status"] == "approved"
         assert "✅" in plan["approval"]["message"]
@@ -77,12 +79,13 @@ def test_supervisor_rejects_when_subtasks_fail():
         )
 
         from supervisor.supervisor import Supervisor
+
         supervisor = Supervisor()
-        
+
         # Capture stderr to check the rejection message
         import io
         from contextlib import redirect_stderr
-        
+
         captured_error = io.StringIO()
         with redirect_stderr(captured_error):
             exit_code = supervisor.run(story, dry_run=False)
@@ -108,12 +111,13 @@ def test_supervisor_approval_includes_summary():
         )
 
         from supervisor.supervisor import Supervisor
+
         supervisor = Supervisor()
-        
+
         # Capture stdout to check the JSON output
         import io
         from contextlib import redirect_stdout
-        
+
         captured_output = io.StringIO()
         with redirect_stdout(captured_output):
             exit_code = supervisor.run(story, dry_run=False)

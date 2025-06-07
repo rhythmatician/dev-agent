@@ -60,19 +60,21 @@ class Supervisor:
     them via the Dev Agent, handling success/failure scenarios and retries.
     """
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None, max_retries: int = 2):
         """Initialize the supervisor.
 
         Args:
             config_path: Optional path to configuration file
+            max_retries: Maximum number of retries for failed subtasks
         """
         self.config_path = config_path
+        self.max_retries = max_retries
         self.story_parser = StoryParser()
 
     def _execute_subtask(
         self, subtask: Dict[str, Any], subtask_num: int, total_subtasks: int
     ) -> bool:
-        """Execute a single subtask using dev-agent.
+        """Execute a single subtask using dev-agent with retry logic.
 
         Args:
             subtask: The subtask to execute
@@ -82,28 +84,41 @@ class Supervisor:
         Returns:
             True if subtask completed successfully, False otherwise
         """
-        print(
-            f"Executing subtask {subtask_num}/{total_subtasks}: {subtask['description']}",
-            file=sys.stderr,
-        )
+        for attempt in range(self.max_retries + 1):  # +1 for initial attempt
+            if attempt > 0:
+                print(
+                    f"Retrying subtask {subtask_num}/{total_subtasks} (attempt {attempt + 1}/{self.max_retries + 1}): {subtask['description']}",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"Executing subtask {subtask_num}/{total_subtasks}: {subtask['description']}",
+                    file=sys.stderr,
+                )
 
-        # Build dev-agent command
-        cmd = [sys.executable, "dev_agent.py", "--story", subtask["description"]]
-        if self.config_path:
-            cmd.extend(["--config", self.config_path])
+            # Build dev-agent command
+            cmd = [sys.executable, "dev_agent.py", "--story", subtask["description"]]
+            if self.config_path:
+                cmd.extend(["--config", self.config_path])
 
-        print(f"Running command: {' '.join(cmd)}", file=sys.stderr)
+            print(f"Running command: {' '.join(cmd)}", file=sys.stderr)
 
-        # Execute dev-agent for this subtask
-        result = subprocess.run(cmd, capture_output=True, text=True)
+            # Execute dev-agent for this subtask
+            result = subprocess.run(cmd, capture_output=True, text=True)
 
-        print(f"dev-agent exit code: {result.returncode}", file=sys.stderr)
-        if result.stderr:
-            print(
-                f"dev-agent stderr preview: {result.stderr[:200]}...", file=sys.stderr
-            )
+            print(f"dev-agent exit code: {result.returncode}", file=sys.stderr)
+            if result.stderr:
+                print(
+                    f"dev-agent stderr preview: {result.stderr[:200]}...",
+                    file=sys.stderr,
+                )
 
-        if result.returncode != 0:
+            if result.returncode == 0:
+                # Success case
+                subtask["status"] = "completed"
+                print(f"Subtask {subtask_num} completed successfully", file=sys.stderr)
+                return True
+
             # Check if this is the "No test failures detected" case, which is actually success
             if "No test failures detected" in result.stderr:
                 print(
@@ -122,14 +137,18 @@ class Supervisor:
                 subtask["status"] = "completed"
                 return True
 
-            print(f"Error: dev-agent failed on subtask {subtask_num}", file=sys.stderr)
+            # If this isn't the last attempt, continue to retry
+            if attempt < self.max_retries:
+                print(f"Subtask {subtask_num} failed, will retry", file=sys.stderr)
+                continue
+
+            # All attempts exhausted
+            print(
+                f"Error: dev-agent failed on subtask {subtask_num} after {self.max_retries + 1} attempts",
+                file=sys.stderr,
+            )
             print(f"dev-agent stderr: {result.stderr}", file=sys.stderr)
             return False
-
-        # Update subtask status to completed
-        subtask["status"] = "completed"
-        print(f"Subtask {subtask_num} completed successfully", file=sys.stderr)
-        return True
 
     def _generate_approval_check(
         self, subtasks: List[Dict[str, Any]], story: str
@@ -196,7 +215,9 @@ class Supervisor:
         if dry_run:
             # In dry-run mode, just output the plan as JSON
             print(json.dumps(plan, indent=2))
-            return 0  # Execute the subtasks by calling dev-agent for each one
+            return 0
+
+        # Execute the subtasks by calling dev-agent for each one
         for i, subtask in enumerate(subtasks):
             success = self._execute_subtask(subtask, i + 1, len(subtasks))
             if not success:
