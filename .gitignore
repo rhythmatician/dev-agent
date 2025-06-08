@@ -8,3 +8,9 @@ venv/*
 flake8_*.txt
 *.egg-info/
 htmlcov/
+dev_agent.egg-info/dependency_links.txt
+dev_agent.egg-info/entry_points.txt
+dev_agent.egg-info/PKG-INFO
+dev_agent.egg-info/requires.txt
+dev_agent.egg-info/SOURCES.txt
+dev_agent.egg-info/top_level.txt
