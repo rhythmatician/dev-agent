@@ -10,6 +10,13 @@ you must output to a file, like `output.txt`, and then read the file
 to get the output. This is to ensure that the output is captured correctly
 by Copilot and can be used in subsequent steps.
 
+Always use proper type annotations.  If you are unsure of the type, use `Any` from
+the `typing` module.  It's better to create a custom class than to return TypeDict or similar.
+Use @dataclass where possible. If a function has no return, use `None` as the return type.
+
+Follow [PEP 257 – Docstring Conventions](https://peps.python.org/pep-0257/) for docstrings.
+
+When editing code blocks, always add an extra line-break at the beginning of the code block.
 
 Also, you should be self-aware that you have a tendency to delete a line-break from the
 beginning of the code block, when you edit a file.  This behavior is consistent.  We use
