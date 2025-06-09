@@ -88,12 +88,14 @@ class Supervisor:
             if attempt > 0:
                 print(
                     f"Retrying subtask {subtask_num}/{total_subtasks} "
-                    f"(attempt {attempt + 1}/{self.max_retries + 1}): {subtask['description']}",
+                    f"(attempt {attempt + 1}/{self.max_retries + 1}):",
+                    f"{subtask['description']}",
                     file=sys.stderr,
                 )
             else:
                 print(
-                    f"Executing subtask {subtask_num}/{total_subtasks}: {subtask['description']}",
+                    f"Executing subtask {subtask_num}/{total_subtasks}:",
+                    f"{subtask['description']}",
                     file=sys.stderr,
                 )
 
@@ -120,21 +122,23 @@ class Supervisor:
                 print(f"Subtask {subtask_num} completed successfully", file=sys.stderr)
                 return True
 
-            # Check if this is the "No test failures detected" case, which is actually success
+            # Check if this is the "No test failures detected" case, which is success
             if "No test failures detected" in result.stderr:
-                print(
-                    f"Subtask {subtask_num}: No test failures - code is already working",
-                    file=sys.stderr,
+                no_failures_msg = (
+                    f"Subtask {subtask_num}: No test failures - "
+                    "code is already working"
                 )
+                print(no_failures_msg, file=sys.stderr)
                 subtask["status"] = "completed"
                 return True
 
-            # Check for permission errors in test environment - treat as success for now
+            # Check for permission errors in test environment - treat as success
             if "PermissionError" in result.stderr and "venv" in result.stderr:
-                print(
-                    f"Subtask {subtask_num}: Permission error in test environment - skipping",
-                    file=sys.stderr,
+                perm_error_msg = (
+                    f"Subtask {subtask_num}: Permission error in test "
+                    "environment - skipping"
                 )
+                print(perm_error_msg, file=sys.stderr)
                 subtask["status"] = "completed"
                 return True
 

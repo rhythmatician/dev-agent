@@ -34,7 +34,7 @@ def test_supervisor_provides_approval_check_for_completed_work():
 
 
 def test_supervisor_approves_when_all_subtasks_complete():
-    """Test that supervisor marks work as approved when all subtasks complete successfully."""
+    """Test supervisor marks work as approved when all subtasks complete."""
     story = "Simple task that should succeed."
 
     # Test the supervisor directly with mocking
