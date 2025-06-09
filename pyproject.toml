@@ -36,10 +36,11 @@ dev = [
 
 [project.scripts]
 dev-agent = "dev_agent:main"
+supervisor-agent = "supervisor:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agent_lib*", "dev_agent*"]
+include = ["agent_lib*", "dev_agent*", "supervisor*"]
 
 [tool.black]
 line-length = 88

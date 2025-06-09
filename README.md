@@ -15,7 +15,7 @@ Built on Microsoft's [AutoGen](https://github.com/microsoft/autogen) framework w
 
 ## 🚀 Quick Start
 
-### Command Line Usage
+### Dev Agent (Low-level)
 
 ```bash
 # Install dev-agent
@@ -23,6 +23,37 @@ pip install dev-agent
 
 # Run on your project
 dev-agent /path/to/your/project
+```
+
+### Supervisor Agent (High-level)
+
+The Supervisor Agent provides a high-level interface for breaking down complex feature descriptions into subtasks:
+
+```bash
+# Run supervisor with a story description
+supervisor-agent run --story "Create a calculator with add and subtract functions"
+
+# Use custom config
+supervisor-agent run --story "Add user authentication" --config my-config.yaml
+
+# Dry-run to see the execution plan
+supervisor-agent run --story "Implement file upload feature" --dry-run
+```
+
+**Example output:**
+```json
+{
+  "story": "Create a calculator with add and subtract functions",
+  "subtasks": [
+    {"id": 1, "description": "Create a calculator", "status": "completed"},
+    {"id": 2, "description": "Add functions", "status": "completed"}
+  ],
+  "approval": {
+    "status": "approved",
+    "message": "✅ Approved: All 2 subtasks completed successfully",
+    "summary": "Completed work for: Create a calculator with add and subtract functions"
+  }
+}
 ```
 
 ### GitHub Action Usage
@@ -90,6 +121,38 @@ graph LR
     C --> F[Git Tools]
     C --> G[Shell Tools]
 ```
+
+## ⚙️ Configuration
+
+Dev Agent uses YAML configuration files. Example `agent.config.yaml`:
+
+```yaml
+# LLM configuration for different agent roles
+agents:
+  supervisor:
+    backend: "ollama"
+    model: "phi"
+  dev_agent:
+    backend: "llama-cpp"
+    model: "/models/codellama-13b.Q4_K_M.gguf"
+
+test_command: "pytest --maxfail=1"
+max_iterations: 5
+
+git:
+  remote: "origin"
+  branch_prefix: "dev-agent/fix"
+  auto_pr: true
+
+metrics:
+  enabled: true
+```
+
+**Supported LLM backends:**
+- `ollama`: Local Ollama server
+- `llama-cpp`: Direct llama.cpp integration
+- `openai`: OpenAI API (for development)
+- `codellama`: CodeLlama specific optimizations
 
 ## 🛠️ Contributing
 
