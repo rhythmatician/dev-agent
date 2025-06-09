@@ -79,4 +79,3 @@ def test_agents_config_with_different_backends():
 
     assert mixed_config["supervisor"]["backend"] == "openai"
     assert mixed_config["dev_agent"]["backend"] == "llama-cpp"
-    assert mixed_config["dev_agent"]["backend"] == "llama-cpp"
